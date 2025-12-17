@@ -1,7 +1,7 @@
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "1.8.21"
-    id("org.jetbrains.intellij") version "1.13.3"
+    id("org.jetbrains.kotlin.jvm") version "1.9.24"
+    id("org.jetbrains.intellij") version "1.17.3"
 }
 
 group = "org.demo"
@@ -9,6 +9,11 @@ version = "1.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
+}
+
+dependencies {
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.code.gson:gson:2.10.1")
 }
 
 // Configure Gradle IntelliJ Plugin
@@ -31,6 +36,7 @@ tasks {
     }
 
     patchPluginXml {
+        version.set(project.version.toString())
         sinceBuild.set("222")
         untilBuild.set("232.*")
     }

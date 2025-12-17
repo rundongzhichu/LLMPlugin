@@ -1,22 +1,29 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
     <!-- Unique identifier of the plugin. It should be FQN. It cannot be changed between the plugin versions. -->
-    <id>org.demo.LLMPlugin</id>
+    <id>org.demo.llmplugin</id>
 
     <!-- Public plugin name should be written in Title Case.
          Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-name -->
     <name>LLMPlugin</name>
 
     <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
-    <vendor email="support@yourcompany.com" url="https://www.yourcompany.com">YourCompany</vendor>
+    <vendor email="17396248231@163.com" url="https://www.yourcompany.com">no</vendor>
 
     <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
          Simple HTML elements (text formatting, paragraphs, and lists) can be added inside of <![CDATA[ ]]> tag.
          Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-description -->
     <description><![CDATA[
-    Enter short description for your plugin here.<br>
-    <em>most HTML tags may be used</em>
-  ]]></description>
+        <h1>Local AI Code Assistant</h1>
+        <p>This plugin lets you:</p>
+        <ul>
+            <li>Explain code with local LLMs (Qwen, Llama)</li>
+            <li>Generate tests offline</li>
+            <li>No data leaves your machine</li>
+        </ul>
+        <p>Supports <b>Ollama</b>, <b>LM Studio</b>, and custom APIs.</p>
+    ]]></description>
+
 
     <!-- Product and plugin compatibility requirements.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
@@ -25,6 +32,30 @@
     <!-- Extension points defined by the plugin.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
+        <!-- 配置页面 -->
+        <applicationConfigurable
+            parentId="tools"
+            instance="org.demo.llmplugin.LocalLLMConfigurable"
+            id="org.demo.llmplugin.LocalLLMConfigurable"
+            displayName="Local LLM"/>
+
+        <!-- 设置存储 -->
+        <applicationService serviceImplementation="org.demo.llmplugin.LocalLLMSettings"/>
 
     </extensions>
+
+    <!-- 可选：顶部菜单栏添加“Ask AI” -->
+    <actions>
+        <!-- 可选：添加菜单项 -->
+        <!-- 定义 Group -->
+        <group id="LocalLLMGroup" class="org.demo.llmplugin.LocalLLMGroup" popup="true">
+            <action id="ExplainCodeAction" class="org.demo.llmplugin.ExplainCodeAction"/>
+        </group>
+
+        <!-- 将 Group 添加到编辑器右键菜单 -->
+        <action id="LocalLLMGroup.Action" class="org.demo.llmplugin.LocalLLMGroup">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+    </actions>
+
 </idea-plugin>

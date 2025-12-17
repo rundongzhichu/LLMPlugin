@@ -39,7 +39,6 @@ class AIInputPopup(
                     val text = textField.text.trim()
                     if (text.isNotEmpty()) {
                         onGenerate(text)
-                        popup?.cancel()
                     }
                 } else if (e.keyCode == KeyEvent.VK_ESCAPE) {
                     popup?.cancel()
@@ -86,6 +85,7 @@ class AIInputPopup(
             // 添加以下配置使popup在失去焦点时不消失
             .setCancelOnWindowDeactivation(false)
             .setCancelKeyEnabled(false)  // 禁用ESC键以外
+            .setCancelOnClickOutside(false)
             .setTitle("LLM Refactor")
             .setMovable(true)
             .setModalContext(false)

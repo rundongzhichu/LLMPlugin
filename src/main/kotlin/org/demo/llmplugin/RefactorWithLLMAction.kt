@@ -7,7 +7,11 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.ui.Messages
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.swing.Swing
 import org.demo.llmplugin.ui.AIInputPopup
 
 class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
@@ -37,24 +41,26 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
 
         // 2. 启动后台任务
         val popup = AIInputPopup(project, editor) { instruction ->
-            ApplicationManager.getApplication().executeOnPooledThread {
+            CoroutineScope(Dispatchers.Swing).launch {
+                // 调用大模型的函数都封装成协程
                 try {
                     // 3. 调用 LLM（模拟或真实 API）
                     val prompt = """
-                    You are an expert programmer.
-                    Original code:
-                    ```java
-                    $selectedText
-                    ```
-                    Instruction: $instruction
-                    Return ONLY the modified code, no explanation.
-                """.trimIndent()
+                You are an expert programmer.
+                Original code:
+                ```java
+                $selectedText
+                ```
+                Instruction: $instruction
+                Return ONLY the modified code, no explanation.
+            """.trimIndent()
 
                     // 使用 runBlocking 来调用 suspend 函数
                     // tongguo
                     val newCode = runBlocking {
                         callLLMAPI(prompt)
                     }
+
 
                     // 4. 回到 UI 线程更新编辑器
                     ApplicationManager.getApplication().invokeLater {

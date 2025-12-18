@@ -35,23 +35,24 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                 try {
                     // 3. 调用 LLM（模拟或真实 API）
                     val prompt = """
-                You are an expert programmer.
-                Original code:
-                ```java
-                $selectedText
-                ```
-                Instruction: $instruction
-                Return ONLY the modified code, no explanation.
-            """.trimIndent()
+                        You are an expert programmer.
+                        Original code:
+                        ```java
+                        $selectedText
+                        ```
+                        Instruction: $instruction
+                        Return ONLY the modified code, no explanation.
+                    """.trimIndent()
 
                     // 使用 runBlocking 来调用 suspend 函数
                     val newCode = runBlocking {
                         callLLMAPI(prompt)
                     }
 
-                    // 4. 将AI生成的代码传递给popup
+                    // 4. 将AI生成的代码和原始代码传递给popup
                     ApplicationManager.getApplication().invokeLater {
                         popup.aiGeneratedCode = newCode
+                        popup.originalCode = selectedText
                     }
                 } catch (ex: Exception) {
                     ApplicationManager.getApplication().invokeLater {

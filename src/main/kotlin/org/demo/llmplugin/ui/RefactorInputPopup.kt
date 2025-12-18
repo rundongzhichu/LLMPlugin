@@ -2,7 +2,6 @@ package org.demo.llmplugin.ui
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
@@ -35,9 +34,10 @@ class RefactorInputPopup(
     private lateinit var loadingHintLabel: JLabel
     private lateinit var bottomPanel: JPanel
     private lateinit var buttonPanel: JPanel
-    private lateinit var acceptButton: JButton
-    private lateinit var rejectButton: JButton
+    private lateinit var previewButton: JButton
+    private lateinit var cancelButton: JButton
     var aiGeneratedCode: String? = null
+    var originalCode: String? = null
 
     fun show() {
         textField = JBTextField()
@@ -60,7 +60,7 @@ class RefactorInputPopup(
                             } finally {
                                 // 确保在任何情况下都隐藏加载状态
                                 ApplicationManager.getApplication().invokeLater {
-                                    showCompletionButtons()
+                                    showPreviewButton()
                                 }
                             }
                         }
@@ -144,37 +144,41 @@ class RefactorInputPopup(
         bottomPanel.repaint()
     }
 
-    private fun showCompletionButtons() {
+    private fun showPreviewButton() {
         // 移除生成中提示
         if (::loadingHintLabel.isInitialized) {
             bottomPanel.remove(loadingHintLabel)
         }
         
-        // 添加接受和拒绝按钮
+        // 添加预览按钮
         buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 8, 0)).apply {
             border = EmptyBorder(0, 0, 0, 0)
             
-            acceptButton = JButton("接受").apply {
+            previewButton = JButton("预览").apply {
                 font = JBFont.medium()
                 addActionListener {
-                    // 接受按钮：替换选中的文本
+                    // 关闭当前popup窗口
+                    popup?.cancel()
+                    
+                    // 预览按钮：打开代码预览窗口
                     aiGeneratedCode?.let { code ->
-                        applyAiGeneratedCode(code)
+                        originalCode?.let { original ->
+                            openCodePreview(original, code)
+                        }
                     }
-                    popup?.cancel()
                 }
             }
             
-            rejectButton = JButton("拒绝").apply {
+            cancelButton = JButton("取消").apply {
                 font = JBFont.medium()
                 addActionListener {
-                    // 拒绝按钮：关闭弹窗，不执行任何操作
+                    // 取消按钮：关闭弹窗，不执行任何操作
                     popup?.cancel()
                 }
             }
             
-            add(acceptButton)
-            add(rejectButton)
+            add(previewButton)
+            add(cancelButton)
         }
         
         bottomPanel.add(buttonPanel, BorderLayout.EAST)
@@ -197,8 +201,18 @@ class RefactorInputPopup(
         textField.text = ""
     }
 
+    private fun openCodePreview(originalCode: String, aiGeneratedCode: String) {
+        val onApply: (String) -> Unit = { modifiedCode ->
+            applyAiGeneratedCode(modifiedCode)
+        }
+        
+        val previewPopup = CodePreviewPopup(project, originalCode, aiGeneratedCode, onApply)
+        previewPopup.show()
+    }
+
     private fun applyAiGeneratedCode(newCode: String) {
-        WriteCommandAction.runWriteCommandAction(project) {
+        val project = editor.project ?: return
+        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
             val document = editor.document
             val selectionModel = editor.selectionModel
             val start = selectionModel.selectionStart

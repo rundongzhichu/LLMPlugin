@@ -15,6 +15,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.6.4")
+    implementation("com.googlecode.java-diff-utils:diffutils:1.3.0")
 }
 
 // Configure Gradle IntelliJ Plugin

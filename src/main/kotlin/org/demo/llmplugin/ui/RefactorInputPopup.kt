@@ -2,6 +2,7 @@ package org.demo.llmplugin.ui
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
@@ -22,11 +23,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
 import javax.swing.JButton
 import java.awt.FlowLayout
-import java.awt.GridLayout
-import java.awt.GridBagLayout
-import java.awt.GridBagConstraints
 
-class AIInputPopup(
+class RefactorInputPopup(
     private val project: Project,
     private val editor: Editor,
     private val onGenerate: suspend (String) -> Unit
@@ -39,7 +37,6 @@ class AIInputPopup(
     private lateinit var buttonPanel: JPanel
     private lateinit var acceptButton: JButton
     private lateinit var rejectButton: JButton
-    private var generatedResult: String? = null
 
     fun show() {
         textField = JBTextField()
@@ -193,5 +190,43 @@ class AIInputPopup(
         bottomPanel.revalidate()
         bottomPanel.repaint()
         textField.text = ""
+    }
+
+    private fun applyTemporaryCode(editor: Editor, newCode: String) {
+        val project = editor.project ?: return
+        WriteCommandAction.runWriteCommandAction(project) {
+            val document = editor.document
+            val selectionModel = editor.selectionModel
+            val start = selectionModel.selectionStart
+            val end = selectionModel.selectionEnd
+
+            // 替换选中区域为AI生成的代码
+            document.replaceString(start, end, newCode)
+
+            // 取消选中，并定位光标到末尾
+            selectionModel.removeSelection()
+            editor.caretModel.moveToOffset(start + newCode.length)
+        }
+    }
+
+    private fun restoreOriginalCode(editor: Editor, originalCode: String, currentCode: String) {
+        val project = editor.project ?: return
+        WriteCommandAction.runWriteCommandAction(project) {
+            val document = editor.document
+            val selectionModel = editor.selectionModel
+            val start = selectionModel.selectionStart
+            val end = selectionModel.selectionEnd
+
+            // 检查当前选区的内容是否是我们要替换的代码
+            val currentTextInSelection = document.getText(com.intellij.openapi.util.TextRange(start, end))
+            if (currentTextInSelection == currentCode) {
+                // 替换回原始代码
+                document.replaceString(start, end, originalCode)
+
+                // 取消选中，并定位光标到末尾
+                selectionModel.removeSelection()
+                editor.caretModel.moveToOffset(start + originalCode.length)
+            }
+        }
     }
 }

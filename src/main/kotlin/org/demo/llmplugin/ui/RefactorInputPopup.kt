@@ -1,11 +1,21 @@
 package org.demo.llmplugin.ui
 
+import com.intellij.diff.DiffManager
+import com.intellij.diff.contents.DocumentContentImpl
+import com.intellij.diff.requests.SimpleDiffRequest
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.EditorFactory
+import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBFont
@@ -22,6 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
 import javax.swing.JButton
 import java.awt.FlowLayout
+import javax.swing.JComponent
 
 class RefactorInputPopup(
     private val project: Project,
@@ -38,6 +49,7 @@ class RefactorInputPopup(
     private lateinit var cancelButton: JButton
     var aiGeneratedCode: String? = null
     var originalCode: String? = null
+    var fileType : FileType? = null
 
     fun show() {
         textField = JBTextField()
@@ -162,7 +174,8 @@ class RefactorInputPopup(
                     aiGeneratedCode?.let { code ->
                         originalCode?.let { original ->
                             ApplicationManager.getApplication().invokeLater {
-                                openCodePreview(original, code)
+//                                openCodePreview(original, code)
+                                showAiDiffInStandardWindow(original, code)
                             }
                         }
                     }
@@ -225,6 +238,50 @@ class RefactorInputPopup(
             // 取消选中，并定位光标到末尾
             selectionModel.removeSelection()
             editor.caretModel.moveToOffset(start + newCode.length)
+        }
+    }
+
+
+    /**
+     * 显示AI生成的代码的差异
+     */
+    private fun showAiDiffInStandardWindow(originalCode : String, aiGeneratedCode: String) {
+        var title = "AI Generated Code Preview"
+        // 创建 Document（用于语法高亮）
+        val editorFactory = EditorFactory.getInstance()
+        val originalDoc = editorFactory.createDocument(originalCode)
+        val revisedDoc = editorFactory.createDocument(aiGeneratedCode)
+
+        // 设置文件类型（关键！否则无高亮）
+        originalDoc.setReadOnly(true)
+        revisedDoc.setReadOnly(false)
+
+        // 创建 Diff 内容
+        val leftContent = DocumentContentImpl(project, originalDoc, fileType)
+        val rightContent = DocumentContentImpl(project, revisedDoc, fileType)
+
+        // 创建请求
+        val request = SimpleDiffRequest(title, leftContent, rightContent, "Original", "AI Suggested")
+        
+        // 创建 Apply 按钮动作
+        val applyAction = object : AnAction("Apply Changes", "Apply AI generated code", null) {
+            override fun actionPerformed(e: AnActionEvent) {
+                // 应用AI生成的代码
+                applyAiGeneratedCode(aiGeneratedCode)
+                
+                // 查找并关闭差异窗口
+                val diffWindow = WindowManager.getInstance().suggestParentWindow(project)
+                diffWindow?.dispose()
+            }
+        }
+        
+        // 创建动作列表并添加Apply按钮
+        val actionList = listOf<AnAction>(applyAction)
+        request.putUserData(com.intellij.diff.util.DiffUserDataKeys.CONTEXT_ACTIONS, ArrayList(actionList))
+
+        // 在 EDT 中打开
+        ApplicationManager.getApplication().invokeLater {
+            DiffManager.getInstance().showDiff(project, request)
         }
     }
 }

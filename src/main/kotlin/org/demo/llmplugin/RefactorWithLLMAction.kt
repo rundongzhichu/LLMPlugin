@@ -4,13 +4,10 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.swing.Swing
 import org.demo.llmplugin.ui.RefactorInputPopup
 
@@ -34,6 +31,7 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
         val project = e.project ?: return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val selectedText = editor.selectionModel.selectedText ?: return
+        val virtualFile = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
 
         // 1. 弹出输入框（在 EDT 中）
         lateinit var popup: RefactorInputPopup

@@ -4,13 +4,8 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.swing.Swing
 import org.demo.llmplugin.ui.ExplanationDialog
-import javax.swing.*
 
 class ExplainCodeAction : AnAction("Explain Selected Code") {
     override fun update(e: AnActionEvent) {

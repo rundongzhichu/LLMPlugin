@@ -14,6 +14,14 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.swing.Swing
 import org.demo.llmplugin.ui.RefactorInputPopup
 
+/**
+ * 用户点击按钮	默认在 EDT → 可直接读 UI，但不要做耗时操作
+ * 调用 AI / 网络	executeOnPooledThread → 结果用 invokeLater 回 UI
+ * 修改代码	invokeLater + WriteCommandAction
+ * 读取代码	后台线程可用 document.getText()；读 PSI 用 runReadAction
+ * 更新 UI 组件	永远用 invokeLater 包裹
+ */
+
 class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
     override fun update(e: AnActionEvent) {
         // 仅当有文本被选中时启用
@@ -29,13 +37,13 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
 
         // 1. 弹出输入框（在 EDT 中）
         lateinit var popup: RefactorInputPopup
-        popup = RefactorInputPopup(project, editor) { instruction ->
-            CoroutineScope(Dispatchers.Swing).launch {
+        popup = RefactorInputPopup(project, editor) { instruction, onComplete ->
+            CoroutineScope(Dispatchers.Swing).launch  {
                 // 调用大模型的函数都封装成协程
                 try {
                     // 3. 调用 LLM（模拟或真实 API）
                     val prompt = """
-                        You are an expert programmer.
+                       You are an expert programmer.
                         Original code:
                         ```java
                         $selectedText
@@ -45,15 +53,17 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                     """.trimIndent()
 
                     // 使用 runBlocking 来调用 suspend 函数
-                    val newCode = runBlocking {
-                        callLLMAPI(prompt)
-                    }
+                    var newCode = callLLMAPI(prompt)
+
 
                     // 4. 将AI生成的代码和原始代码传递给popup
                     ApplicationManager.getApplication().invokeLater {
                         popup.aiGeneratedCode = newCode
                         popup.originalCode = selectedText
                     }
+
+                    // 调用完成回调
+                    onComplete()
                 } catch (ex: Exception) {
                     ApplicationManager.getApplication().invokeLater {
                         Messages.showErrorDialog(
@@ -62,10 +72,16 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                             "LLM Error"
                         )
                     }
+                    // 即使出错也要调用完成回调
+                    onComplete()
                 }
             }
         }
-        popup.show()
+
+        // 2. 显示输入框（在 EDT 中）
+        ApplicationManager.getApplication().invokeLater {
+            popup.show()
+        }
     }
 
     private suspend fun callLLMAPI(prompt: String): String {

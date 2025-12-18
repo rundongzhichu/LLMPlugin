@@ -26,7 +26,7 @@ import java.awt.FlowLayout
 class RefactorInputPopup(
     private val project: Project,
     private val editor: Editor,
-    private val onGenerate: suspend (String) -> Unit
+    private val onGenerate: (String, () -> Unit) -> Unit  // 修改回调签名，添加完成回调
 ) {
     private var popup: JBPopup? = null
     private lateinit var textField: JBTextField
@@ -53,12 +53,10 @@ class RefactorInputPopup(
                     val text = textField.text.trim()
                     if (text.isNotEmpty()) {
                         showLoading()
-                        // 使用协程执行挂起函数
-                        CoroutineScope(Dispatchers.Swing).launch {
-                            try {
-                                onGenerate(text)
-                            } finally {
-                                // 确保在任何情况下都隐藏加载状态
+                        // 使用executeOnPooledThread在后台线程执行生成逻辑
+                        ApplicationManager.getApplication().executeOnPooledThread {
+                            onGenerate(text) {
+                                // 在EDT线程更新UI
                                 ApplicationManager.getApplication().invokeLater {
                                     showPreviewButton()
                                 }
@@ -163,7 +161,9 @@ class RefactorInputPopup(
                     // 预览按钮：打开代码预览窗口
                     aiGeneratedCode?.let { code ->
                         originalCode?.let { original ->
-                            openCodePreview(original, code)
+                            ApplicationManager.getApplication().invokeLater {
+                                openCodePreview(original, code)
+                            }
                         }
                     }
                 }
@@ -212,6 +212,7 @@ class RefactorInputPopup(
 
     private fun applyAiGeneratedCode(newCode: String) {
         val project = editor.project ?: return
+        // 修改代码用WriteCommandAction
         com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
             val document = editor.document
             val selectionModel = editor.selectionModel

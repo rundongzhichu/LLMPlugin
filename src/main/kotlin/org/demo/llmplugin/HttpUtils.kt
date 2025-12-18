@@ -13,7 +13,8 @@ import java.util.concurrent.TimeUnit
 object HttpUtils {
     private val client = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)  // 增加读取超时到120秒
+            .writeTimeout(30, TimeUnit.SECONDS)
             .build()
 
     private val gson = Gson()
@@ -38,19 +39,39 @@ object HttpUtils {
         try {
             val response = client.newCall(requestBuilder.build()).execute()
             if (!response.isSuccessful) {
-                return@withContext "Error: HTTP ${response.code}"
+                return@withContext "Error: HTTP ${response.code} - ${response.message}"
             }
             val responseBody = response.body?.string() ?: return@withContext "Empty response"
+            
+            // 检查响应体是否为空
+            if (responseBody.isBlank()) {
+                return@withContext "Empty response body"
+            }
+            
             val json = gson.fromJson(responseBody, JsonObject::class.java)
-            val content = json.getAsJsonArray("choices")
-                    ?.get(0)
+            
+            // 检查是否有错误字段
+            if (json.has("error")) {
+                val error = json.getAsJsonObject("error")
+                val errorMessage = error.get("message")?.asString ?: "Unknown error"
+                return@withContext "API Error: $errorMessage"
+            }
+            
+            val choices = json.getAsJsonArray("choices")
+            if (choices == null || choices.size() == 0) {
+                return@withContext "No choices in response"
+            }
+            
+            val content = choices
+                    .get(0)
                     ?.asJsonObject
                     ?.getAsJsonObject("message")
                     ?.get("content")
                     ?.asString
+                    
             content ?: "No content in response"
         } catch (e: Exception) {
-            "Network error: ${e.message}"
+            "Network error: ${e.message ?: e.javaClass.simpleName}"
         }
     }
 }

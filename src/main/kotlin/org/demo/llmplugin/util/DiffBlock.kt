@@ -3,7 +3,11 @@ package org.demo.llmplugin.util
 import difflib.DiffUtils
 import difflib.Patch
 
-
+data class DiffBlock(
+    val originalLines: List<String>,
+    val newLines: List<String>,
+    val startLineInOriginal: Int // 从 0 开始
+)
 
 object CodeDiffer {
     fun computeDiff(original: String, revised: String): List<DiffBlock> {
@@ -15,16 +19,11 @@ object CodeDiffer {
 
         return deltas.map { delta ->
             DiffBlock(
-                originalLines = delta.source.lines,
-                newLines = delta.target.lines,
-                startLineInOriginal = delta.source.position
+                originalLines = delta.original.lines,
+                newLines = delta.revised.lines,
+                startLineInOriginal = delta.original.position
             )
         }
     }
 }
 
-data class DiffBlock(
-    val originalLines: List<String>,
-    val newLines: List<String>,
-    val startLineInOriginal: Int // 从 0 开始
-)

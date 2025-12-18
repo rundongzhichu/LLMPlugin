@@ -159,68 +159,15 @@ class RefactorInputPopup(
         if (::loadingHintLabel.isInitialized) {
             bottomPanel.remove(loadingHintLabel)
         }
-        
-        // 添加预览按钮
-        buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 8, 0)).apply {
-            border = EmptyBorder(0, 0, 0, 0)
-            
-            previewButton = JButton("预览").apply {
-                font = JBFont.medium()
-                addActionListener {
-                    // 关闭当前popup窗口
-                    popup?.cancel()
-                    
-                    // 预览按钮：打开代码预览窗口
-                    aiGeneratedCode?.let { code ->
-                        originalCode?.let { original ->
-                            ApplicationManager.getApplication().invokeLater {
-//                                openCodePreview(original, code)
-                                showAiDiffInStandardWindow(original, code)
-                            }
-                        }
-                    }
+        // 预览按钮：打开代码预览窗口
+        aiGeneratedCode?.let { code ->
+            originalCode?.let { original ->
+                ApplicationManager.getApplication().invokeLater {
+                    showAiDiffInStandardWindow(original, code)
                 }
             }
-            
-            cancelButton = JButton("取消").apply {
-                font = JBFont.medium()
-                addActionListener {
-                    // 取消按钮：关闭弹窗，不执行任何操作
-                    popup?.cancel()
-                }
-            }
-            
-            add(previewButton)
-            add(cancelButton)
         }
-        
-        bottomPanel.add(buttonPanel, BorderLayout.EAST)
-        bottomPanel.revalidate()
-        bottomPanel.repaint()
-    }
-    
-    private fun restoreInitialState() {
-        // 移除按钮面板
-        if (::buttonPanel.isInitialized) {
-            bottomPanel.remove(buttonPanel)
-        }
-        
-        // 显示ESC退出标签
-        escHintLabel.isVisible = true
-        bottomPanel.add(escHintLabel, BorderLayout.EAST)
-        
-        bottomPanel.revalidate()
-        bottomPanel.repaint()
-        textField.text = ""
-    }
 
-    private fun openCodePreview(originalCode: String, aiGeneratedCode: String) {
-        val onApply: (String) -> Unit = { modifiedCode ->
-            applyAiGeneratedCode(modifiedCode)
-        }
-        
-        val previewPopup = CodePreviewPopup(project, originalCode, aiGeneratedCode, onApply)
-        previewPopup.show()
     }
 
     private fun applyAiGeneratedCode(newCode: String) {
@@ -253,29 +200,30 @@ class RefactorInputPopup(
         val revisedDoc = editorFactory.createDocument(aiGeneratedCode)
 
         // 设置文件类型（关键！否则无高亮）
-        originalDoc.setReadOnly(true)
-        revisedDoc.setReadOnly(false)
+        originalDoc.setReadOnly(false)
+        revisedDoc.setReadOnly(true)
 
         // 创建 Diff 内容
-        val leftContent = DocumentContentImpl(project, originalDoc, fileType)
-        val rightContent = DocumentContentImpl(project, revisedDoc, fileType)
+        val leftContent = DocumentContentImpl(project, revisedDoc, fileType)
+        val rightContent = DocumentContentImpl(project, originalDoc, fileType)
 
         // 创建请求
-        val request = SimpleDiffRequest(title, leftContent, rightContent, "Original", "AI Suggested")
+        val request = SimpleDiffRequest(title, leftContent, rightContent, "AI Suggested", "Original")
         
         // 创建 Apply 按钮动作
-        val applyAction = object : AnAction("Apply Changes", "Apply AI generated code", null) {
+        val applyAction = object : AnAction("Apply Changes", "Apply AI generated code", com.intellij.icons.AllIcons.Actions.Checked) {
             override fun actionPerformed(e: AnActionEvent) {
                 // 应用AI生成的代码
-                applyAiGeneratedCode(aiGeneratedCode)
+                applyAiGeneratedCode(originalDoc.text)
                 
                 // 查找并关闭差异窗口
-                val diffWindow = WindowManager.getInstance().suggestParentWindow(project)
-                diffWindow?.dispose()
+//                val diffWindow = WindowManager.getInstance().suggestParentWindow(project)
+//                diffWindow?.dispose()
             }
         }
+
         
-        // 创建动作列表并添加Apply按钮
+        // 创建动作列表并添加Apply和Merge All按钮
         val actionList = listOf<AnAction>(applyAction)
         request.putUserData(com.intellij.diff.util.DiffUserDataKeys.CONTEXT_ACTIONS, ArrayList(actionList))
 

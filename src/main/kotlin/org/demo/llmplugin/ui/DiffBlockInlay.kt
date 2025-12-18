@@ -1,95 +1,190 @@
+
 package org.demo.llmplugin.ui
 
-// DiffBlockInlay.kt
-import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.editor.EditorCustomElementRenderer
 import com.intellij.openapi.editor.Inlay
-import com.intellij.openapi.editor.LogicalPosition
-import com.intellij.openapi.editor.colors.EditorFontType
+import com.intellij.openapi.editor.colors.EditorColors
+import com.intellij.openapi.editor.markup.HighlighterLayer
+import com.intellij.openapi.editor.markup.HighlighterTargetArea
+import com.intellij.openapi.editor.markup.RangeHighlighter
 import com.intellij.openapi.editor.markup.TextAttributes
-import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.ui.JBColor
-import org.demo.llmplugin.util.DiffBlock
+import com.intellij.ui.components.JBScrollPane
+import com.intellij.util.ui.JBUI
 import java.awt.*
-import java.util.concurrent.atomic.AtomicReference
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
+import javax.swing.*
+import javax.swing.border.CompoundBorder
+import javax.swing.border.EmptyBorder
+import javax.swing.border.MatteBorder
+import com.intellij.openapi.editor.impl.EditorImpl
+import com.intellij.openapi.editor.InlayProperties
 
 class DiffBlockInlay(
     private val editor: Editor,
-    private val project: Project,
-    private val block: DiffBlock,
-    private val inlayRef: AtomicReference<Inlay<*>?>
-) : EditorCustomElementRenderer {
+    private val diffBlock: org.demo.llmplugin.util.DiffBlock,
+    private val originalCode: String,
+    private val newCode: String
+) {
+    private var inlay: Inlay<*>? = null
+    private var highlighters: MutableList<RangeHighlighter> = mutableListOf()
 
-    // 缓存计算结果，避免频繁重绘
-    private var preferredSize: Dimension? = null
-    private val lineHeight = editor.lineHeight
-    private val font = try {
-        editor.colorsScheme.getFont(EditorFontType.PLAIN)
-    } catch (e: Exception) {
-        Font(Font.MONOSPACED, Font.PLAIN, 12)
+    fun show() {
+        val document = editor.document
+        val startOffset = document.getLineStartOffset(diffBlock.startLine)
+        
+        // 创建包含AI代码和操作按钮的面板
+        val panel = createDiffPanel()
+        
+        // 在指定位置插入inlay
+        val props = InlayProperties().showAbove(true).priority(100)
+        inlay = editor.inlayModel.addInlineElement(startOffset, props, JComponentEditorCustomElementRenderer(panel))
+        
+        // 高亮显示原始代码区域
+        highlightOriginalCode()
+        
+        // 高亮显示新代码区域
+        highlightNewCode()
     }
-
-    override fun calcWidthInPixels(inlay: Inlay<out EditorCustomElementRenderer>): Int {
-        val maxWidth = block.newLines.map {
-            editor.component.getFontMetrics(font).stringWidth("+ $it")
-        }.maxOrNull() ?: 100
-        return maxWidth + 40 // 留出按钮空间（简化处理）
+    
+    private fun createDiffPanel(): JPanel {
+        val panel = JPanel()
+        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
+        panel.background = JBColor(0xF5F5F5, 0x3C3F41)
+        panel.border = CompoundBorder(
+            MatteBorder(1, 0, 1, 0, JBColor.GRAY),
+            EmptyBorder(5, 0, 5, 0)
+        )
+        
+        // 操作按钮部分 - 放在顶部，左对齐
+        val buttonPanel = createButtonPanel()
+        panel.add(buttonPanel)
+        
+        // AI代码部分 - 新代码
+        val newCodePanel = createCodePanel(diffBlock.newText, true)
+        panel.add(newCodePanel)
+        
+        return panel
     }
-
-    override fun calcHeightInPixels(inlay: Inlay<out EditorCustomElementRenderer>): Int {
-        return lineHeight * (block.newLines.size + 1) // +1 给按钮
+    
+    private fun createCodePanel(codeText: String, isNewCode: Boolean): JPanel {
+        val panel = JPanel(BorderLayout())
+        panel.border = EmptyBorder(5, 10, 5, 10)
+        panel.background = if (isNewCode) JBColor(0xE0F0FF, 0x2D3033) else JBColor(0xF5F5F5, 0x3C3F41)
+        
+        val textPane = JTextPane()
+        textPane.text = codeText
+        textPane.isEditable = false
+        textPane.background = if (isNewCode) JBColor(0xE0F0FF, 0x2D3033) else JBColor(0xF5F5F5, 0x3C3F41)
+        textPane.border = EmptyBorder(5, 5, 5, 5)
+        textPane.font = Font(Font.MONOSPACED, Font.PLAIN, 12)
+        
+        val scrollPane = JBScrollPane(textPane)
+        scrollPane.verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
+        scrollPane.horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
+        scrollPane.border = EmptyBorder(0, 0, 0, 0)
+        scrollPane.background = if (isNewCode) JBColor(0xE0F0FF, 0x2D3033) else JBColor(0xF5F5F5, 0x3C3F41)
+        
+        panel.add(scrollPane, BorderLayout.CENTER)
+        
+        return panel
     }
-
-    override fun paint(inlay: Inlay<*>, g: Graphics, targetRegion: Rectangle, textAttributes: TextAttributes) {
-        val g2 = g.create() as Graphics2D
-        g2.font = font
-        g2.color = JBColor.GRAY
-
-        val yStart = targetRegion.y + lineHeight
-
-        // 绘制新代码行（绿色）
-        for ((index, line) in block.newLines.withIndex()) {
-            g2.color = JBColor(Color(0, 150, 0), Color(0, 180, 0)) // 绿色（支持 Darcula）
-            g2.drawString("+ $line", targetRegion.x, yStart + index * lineHeight)
+    
+    private fun createButtonPanel(): JPanel {
+        val panel = JPanel(FlowLayout(FlowLayout.LEFT)) // 左对齐确保按钮在左上角
+        panel.border = EmptyBorder(5, 10, 5, 10)
+        panel.background = JBColor(0xF5F5F5, 0x3C3F41)
+        
+        val acceptButton = JButton("接受")
+        acceptButton.addActionListener {
+            applyChanges()
         }
-
-        // 绘制操作提示（简化：用文字代替按钮）
-        g2.color = JBColor.BLUE
-        g2.drawString("[Accept] [Reject]", targetRegion.x, yStart + block.newLines.size * lineHeight)
-
-        g2.dispose()
+        
+        val rejectButton = JButton("拒绝")
+        rejectButton.addActionListener {
+            removeInlay()
+        }
+        
+        panel.add(acceptButton)
+        panel.add(rejectButton)
+        
+        return panel
     }
-
-    // 可选：响应点击（需额外注册 MouseListener 到 editor.component）
-    fun handleClick(x: Int, y: Int): Boolean {
-        // 简化：点击任意位置接受
-        applyChange()
-        inlayRef.get()?.dispose()
-        return true
-    }
-
-    private fun applyChange() {
-        WriteCommandAction.runWriteCommandAction(project) {
-            val doc = editor.document
-            val startOffset = editor.logicalPositionToOffset(
-                LogicalPosition(block.startLineInOriginal, 0)
-            )
-            val endLine = block.startLineInOriginal + block.originalLines.size
-            val endOffset = if (endLine >= doc.lineCount) {
-                doc.textLength
+    
+    private fun highlightOriginalCode() {
+        val document = editor.document
+        val startLine = diffBlock.startLine
+        val endLine = diffBlock.endLine
+        
+        if (startLine < document.lineCount && endLine <= document.lineCount) {
+            val startOffset = document.getLineStartOffset(startLine)
+            val endOffset = if (endLine < document.lineCount) {
+                document.getLineStartOffset(endLine)
             } else {
-                doc.getLineStartOffset(endLine)
+                document.textLength
             }
-
-            // 替换原始代码块为新代码
-            val newText = block.newLines.joinToString("\n")
-            doc.replaceString(startOffset, endOffset, newText)
+            
+            val highlighter = editor.markupModel.addRangeHighlighter(
+                startOffset,
+                endOffset,
+                HighlighterLayer.SELECTION,
+                TextAttributes().apply {
+                    backgroundColor = JBColor(0xFFF0E0, 0x454545)
+                },
+                HighlighterTargetArea.EXACT_RANGE
+            )
+            
+            highlighters.add(highlighter)
         }
-        dismiss()
     }
+    
+    private fun highlightNewCode() {
+        // 这里可以添加对新代码的高亮显示逻辑
+    }
+    
+    private fun applyChanges() {
+        // 应用AI生成的代码更改
+        val project = editor.project ?: return
+        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+            val document = editor.document
+            val startLine = diffBlock.startLine
+            val endLine = diffBlock.endLine
+            
+            if (startLine < document.lineCount && endLine <= document.lineCount) {
+                val startOffset = document.getLineStartOffset(startLine)
+                val endOffset = if (endLine < document.lineCount) {
+                    document.getLineStartOffset(endLine)
+                } else {
+                    document.textLength
+                }
+                
+                document.replaceString(startOffset, endOffset, diffBlock.newText)
+            }
+        }
+        
+        removeInlay()
+    }
+    
+    private fun removeInlay() {
+        // 移除inlay元素
+        inlay?.dispose()
+        
+        // 移除所有高亮
+        highlighters.forEach { highlighter ->
+            editor.markupModel.removeHighlighter(highlighter)
+        }
+        highlighters.clear()
+    }
+    
+    private class JComponentEditorCustomElementRenderer(private val component: JComponent) : com.intellij.openapi.editor.EditorCustomElementRenderer {
+        override fun calcWidthInPixels(inlay: Inlay<*>): Int {
+            return inlay.editor.component.width
+        }
 
-    private fun dismiss() {
-        inlayRef.get()?.dispose()
+        override fun paint(inlay: Inlay<*>, g: Graphics, targetRegion: Rectangle, textAttributes: TextAttributes) {
+            SwingUtilities.paintComponent(g, component, inlay.editor.contentComponent, targetRegion)
+        }
     }
 }

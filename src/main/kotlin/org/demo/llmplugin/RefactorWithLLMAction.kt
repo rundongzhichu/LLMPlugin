@@ -5,8 +5,6 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.editor.Inlay
-import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import kotlinx.coroutines.CoroutineScope
@@ -14,10 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.swing.Swing
-import org.demo.llmplugin.ui.DiffBlockInlay
 import org.demo.llmplugin.ui.RefactorInputPopup
-import org.demo.llmplugin.util.CodeDiffer
-import java.util.concurrent.atomic.AtomicReference
 
 class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
     override fun update(e: AnActionEvent) {
@@ -33,7 +28,8 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
         val selectedText = editor.selectionModel.selectedText ?: return
 
         // 1. 弹出输入框（在 EDT 中）
-        val popup = RefactorInputPopup(project, editor) { instruction ->
+        lateinit var popup: RefactorInputPopup
+        popup = RefactorInputPopup(project, editor) { instruction ->
             CoroutineScope(Dispatchers.Swing).launch {
                 // 调用大模型的函数都封装成协程
                 try {
@@ -53,9 +49,9 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                         callLLMAPI(prompt)
                     }
 
-                    // 4. 显示AI生成代码的内联差异界面
+                    // 4. 将AI生成的代码传递给popup
                     ApplicationManager.getApplication().invokeLater {
-                        showDiffSuggestions(editor, project, selectedText, newCode)
+                        popup.aiGeneratedCode = newCode
                     }
                 } catch (ex: Exception) {
                     ApplicationManager.getApplication().invokeLater {
@@ -69,34 +65,6 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
             }
         }
         popup.show()
-    }
-
-    fun showDiffSuggestions(
-        editor: Editor,
-        project: Project,
-        originalCode: String,
-        aiGeneratedCode: String
-    ) {
-        val diffBlocks = CodeDiffer.computeDiff(originalCode, aiGeneratedCode)
-
-        // 按行号倒序插入（避免 offset 变化影响后续位置）
-        diffBlocks.reversed().forEach { block ->
-            val insertOffset = editor.logicalPositionToOffset(
-                LogicalPosition(block.startLineInOriginal, 0)
-            )
-
-            val inlayRef = AtomicReference<Inlay<*>?>()
-            val renderer = DiffBlockInlay(editor, project, block, inlayRef)
-
-            val inlay = editor.inlayModel.addBlockElement(
-                insertOffset,
-                /* relatesToPrecedingText = */ true,
-                /* showAbove = */ false,
-                /* priority = */ 0,
-                renderer
-            )
-            inlayRef.set(inlay)
-        }
     }
 
     private suspend fun callLLMAPI(prompt: String): String {

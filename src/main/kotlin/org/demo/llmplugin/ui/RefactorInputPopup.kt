@@ -37,6 +37,7 @@ class RefactorInputPopup(
     private lateinit var buttonPanel: JPanel
     private lateinit var acceptButton: JButton
     private lateinit var rejectButton: JButton
+    var aiGeneratedCode: String? = null
 
     fun show() {
         textField = JBTextField()
@@ -156,6 +157,10 @@ class RefactorInputPopup(
             acceptButton = JButton("接受").apply {
                 font = JBFont.medium()
                 addActionListener {
+                    // 接受按钮：替换选中的文本
+                    aiGeneratedCode?.let { code ->
+                        applyAiGeneratedCode(code)
+                    }
                     popup?.cancel()
                 }
             }
@@ -163,8 +168,8 @@ class RefactorInputPopup(
             rejectButton = JButton("拒绝").apply {
                 font = JBFont.medium()
                 addActionListener {
-                    // 恢复初始状态
-                    restoreInitialState()
+                    // 拒绝按钮：关闭弹窗，不执行任何操作
+                    popup?.cancel()
                 }
             }
             
@@ -192,8 +197,7 @@ class RefactorInputPopup(
         textField.text = ""
     }
 
-    private fun applyTemporaryCode(editor: Editor, newCode: String) {
-        val project = editor.project ?: return
+    private fun applyAiGeneratedCode(newCode: String) {
         WriteCommandAction.runWriteCommandAction(project) {
             val document = editor.document
             val selectionModel = editor.selectionModel
@@ -206,27 +210,6 @@ class RefactorInputPopup(
             // 取消选中，并定位光标到末尾
             selectionModel.removeSelection()
             editor.caretModel.moveToOffset(start + newCode.length)
-        }
-    }
-
-    private fun restoreOriginalCode(editor: Editor, originalCode: String, currentCode: String) {
-        val project = editor.project ?: return
-        WriteCommandAction.runWriteCommandAction(project) {
-            val document = editor.document
-            val selectionModel = editor.selectionModel
-            val start = selectionModel.selectionStart
-            val end = selectionModel.selectionEnd
-
-            // 检查当前选区的内容是否是我们要替换的代码
-            val currentTextInSelection = document.getText(com.intellij.openapi.util.TextRange(start, end))
-            if (currentTextInSelection == currentCode) {
-                // 替换回原始代码
-                document.replaceString(start, end, originalCode)
-
-                // 取消选中，并定位光标到末尾
-                selectionModel.removeSelection()
-                editor.caretModel.moveToOffset(start + originalCode.length)
-            }
         }
     }
 }

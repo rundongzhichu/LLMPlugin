@@ -14,6 +14,7 @@ import okhttp3.Response
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
 object HttpUtils {
@@ -98,7 +99,8 @@ object HttpUtils {
         }
         
         val responseBody = response.body ?: return "Empty response body"
-        val reader = BufferedReader(InputStreamReader(responseBody.byteStream()))
+        // 使用UTF-8字符集确保中文正确解码
+        val reader = BufferedReader(InputStreamReader(responseBody.byteStream(), StandardCharsets.UTF_8))
         val stringBuffer = StringBuffer()
         
         try {

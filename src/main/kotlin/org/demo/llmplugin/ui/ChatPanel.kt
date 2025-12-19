@@ -7,17 +7,20 @@ import kotlinx.coroutines.*
 import org.demo.llmplugin.HttpUtils
 import java.awt.*
 import javax.swing.*
+import javax.swing.text.SimpleAttributeSet
+import javax.swing.text.StyleConstants
 
 class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val chatContainer: JPanel
     private val inputField: JTextField
     private val sendButton: JButton
-    private var aiMessageLabel: JLabel? = null
+    private var aiMessageTextPane: JTextPane? = null
     private lateinit var scrollPane: JBScrollPane
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val messageSpacing = 10 // 消息之间的固定间距
 
     private var isStream =  false
+
     init {
         // 创建聊天历史记录显示区域容器，使用GridBagLayout确保组件从顶部开始并保持固定间距
         chatContainer = JPanel(GridBagLayout())
@@ -127,16 +130,29 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         val messagePanel = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.empty(5, 10)
             background = Color(220, 240, 255) // 浅蓝色背景
-        }
-        
-        val messageLabel = JLabel().apply {
-            border = JBUI.Borders.empty(5)
-            text = "<html><div style='text-align: right;'>$message</div></html>"
-            font = Font(Font.DIALOG, Font.PLAIN, 12) // 使用支持中文的字体
             foreground = Color(0, 0, 0) // 深灰色字体
         }
         
-        messagePanel.add(messageLabel, BorderLayout.CENTER)
+        val messageTextPane = JTextPane().apply {
+            border = JBUI.Borders.empty(5)
+            text = message
+            isEditable = false
+            font = Font(Font.DIALOG, Font.PLAIN, 12)
+            // 设置文本右对齐
+            val style = SimpleAttributeSet()
+            StyleConstants.setAlignment(style, StyleConstants.ALIGN_RIGHT)
+            styledDocument.setParagraphAttributes(0, styledDocument.length, style, false)
+        }
+        
+        // 将JTextPane包装在JScrollPane中以支持滚动
+        val messageScrollPane = JBScrollPane(messageTextPane).apply {
+            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+            preferredSize = Dimension(400, 50)
+            maximumSize = Dimension(Integer.MAX_VALUE, 100)
+        }
+        
+        messagePanel.add(messageScrollPane, BorderLayout.CENTER)
         
         // 创建一个包装面板，将消息靠右对齐
         val wrapper = JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
@@ -162,14 +178,23 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             background = Color(245, 245, 245) // 浅灰色背景
         }
         
-        aiMessageLabel = JLabel().apply {
+        aiMessageTextPane = JTextPane().apply {
             border = JBUI.Borders.empty(5)
             text = "AI is thinking..."
+            isEditable = false
+            font = Font(Font.DIALOG, Font.PLAIN, 12)
             foreground = Color(0, 0, 0) // 深灰色字体
-            font = Font(Font.DIALOG, Font.PLAIN, 12) // 使用支持中文的字体
         }
         
-        messagePanel.add(aiMessageLabel, BorderLayout.CENTER)
+        // 将JTextPane包装在JScrollPane中以支持滚动
+        val messageScrollPane = JBScrollPane(aiMessageTextPane).apply {
+            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+            preferredSize = Dimension(400, 50)
+            maximumSize = Dimension(Integer.MAX_VALUE, 100)
+        }
+        
+        messagePanel.add(messageScrollPane, BorderLayout.CENTER)
         
         // 创建一个包装面板，将消息靠左对齐
         val wrapper = JPanel(FlowLayout(FlowLayout.LEFT)).apply {
@@ -182,7 +207,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private fun updateAiMessage(content: String) {
         // 更新AI消息内容并支持Markdown渲染
-        aiMessageLabel?.text = renderMarkdown(content)
+        aiMessageTextPane?.text = content
         scrollToBottom()
     }
     
@@ -193,40 +218,11 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private fun addAiErrorMessage(message: String) {
         // 更新错误消息
-        aiMessageLabel?.apply {
+        aiMessageTextPane?.apply {
             text = message
             foreground = Color.RED
         }
         scrollToBottom()
-    }
-
-    private fun renderMarkdown(content: String): String {
-        // 简单的Markdown渲染实现
-        var rendered = content
-        
-        // 处理粗体 (**text** 或 __text__)
-        rendered = rendered.replace(Regex("\\*\\*(.*?)\\*\\*"), "<b>$1</b>")
-        rendered = rendered.replace(Regex("__(.*?)__"), "<b>$1</b>")
-        
-        // 处理斜体 (*text* 或 _text_)
-        rendered = rendered.replace(Regex("\\*(.*?)\\*"), "<i>$1</i>")
-        rendered = rendered.replace(Regex("_(.*?)_"), "<i>$1</i>")
-        
-        // 处理行内代码 (`code`)
-        rendered = rendered.replace(Regex("`([^`]+)`"), "<code><font color='#006600'>$1</font></code>")
-        
-        // 处理标题 (# Header)
-        rendered = rendered.replace(Regex("^#\\s+(.*)", RegexOption.MULTILINE), "<h1><b>$1</b></h1>")
-        rendered = rendered.replace(Regex("^##\\s+(.*)", RegexOption.MULTILINE), "<h2><b>$1</b></h2>")
-        rendered = rendered.replace(Regex("^###\\s+(.*)", RegexOption.MULTILINE), "<h3><b>$1</b></h3>")
-        
-        // 处理无序列表项 (* item 或 - item)
-        rendered = rendered.replace(Regex("^[*\\-]\\s+(.*)", RegexOption.MULTILINE), "<li>$1</li>")
-        
-        // 处理换行
-        rendered = rendered.replace("\n", "<br>")
-        
-        return "<html>$rendered</html>"
     }
 
     private fun scrollToBottom() {

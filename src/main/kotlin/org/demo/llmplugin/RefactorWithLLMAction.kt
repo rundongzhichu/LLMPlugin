@@ -44,9 +44,12 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                         Return ONLY the modified code, no explanation.
                     """.trimIndent()
 
-                    // 使用 runBlocking 来调用 suspend 函数
-                    var newCode = callLLMAPI(prompt)
-
+                    // 采用流式读取AI返回值，拼接成最终字符串
+                    val newCode = buildString {
+                        callLLMAPI(prompt) { chunk ->
+                            append(chunk)
+                        }
+                    }
 
                     // 4. 将AI生成的代码和原始代码传递给popup
                     ApplicationManager.getApplication().invokeLater {
@@ -76,6 +79,11 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
         }
     }
 
+    private suspend fun callLLMAPI(prompt: String, onChunkReceived: (String) -> Unit): String {
+        // 实际应调用 HTTP API
+        return HttpUtils.callLocalLlm(prompt, onChunkReceived)
+    }
+    
     private suspend fun callLLMAPI(prompt: String): String {
         // 实际应调用 HTTP API
         return HttpUtils.callLocalLlm(prompt)

@@ -8,6 +8,8 @@ import kotlinx.coroutines.runBlocking
 import org.demo.llmplugin.ui.ExplanationDialog
 
 class ExplainCodeAction : AnAction("Explain Selected Code") {
+
+    private var isStream = false
     override fun update(e: AnActionEvent) {
         val hasSelection = e.getData(CommonDataKeys.EDITOR)?.selectionModel?.hasSelection() == true
         e.presentation.isEnabledAndVisible = hasSelection
@@ -31,16 +33,31 @@ class ExplainCodeAction : AnAction("Explain Selected Code") {
         ApplicationManager.getApplication().executeOnPooledThread  {
             try {
                 val response = runBlocking {
-                    HttpUtils.callLocalLlm(prompt)
+                    HttpUtils.callLocalLlm(prompt) { chunk ->
+                        // 流式接收数据块并在UI上逐个显示
+                        ApplicationManager.getApplication().invokeLater {
+                            dialog.showContent()
+                            isStream = true
+                            // 追加新的内容块
+                            dialog.appendMessage(chunk)
+                        }
+                    }
                 }
                 // 显示解释结果
                 ApplicationManager.getApplication().invokeLater {
-                    dialog.showContent(response)
+                    if (!isStream) {
+                        dialog.showContent()
+                        // 显示完整响应
+                        dialog.appendMessage("$response\n\n")
+                    } else {
+                        // 已经开始流式显示，只需添加结尾换行
+                        dialog.appendMessage("\n\n")
+                    }
                 }
             } catch (e: Exception) {
                 // 显示错误信息
                 ApplicationManager.getApplication().invokeLater {
-                    dialog.showContent("Failed to explain code: ${e.message}")
+                    dialog.appendMessage("Failed to explain code: ${e.message}")
                 }
             }
         }

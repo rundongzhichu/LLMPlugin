@@ -5,17 +5,14 @@ import com.intellij.diff.contents.DocumentContentImpl
 import com.intellij.diff.requests.SimpleDiffRequest
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
-import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBFont
@@ -26,8 +23,6 @@ import java.awt.event.KeyEvent
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.border.EmptyBorder
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
 import javax.swing.JButton
@@ -70,7 +65,7 @@ class RefactorInputPopup(
                             onGenerate(text) {
                                 // 在EDT线程更新UI
                                 ApplicationManager.getApplication().invokeLater {
-                                    showPreviewButton()
+                                    showDiffPreview()
                                 }
                             }
                         }
@@ -154,7 +149,7 @@ class RefactorInputPopup(
         bottomPanel.repaint()
     }
 
-    private fun showPreviewButton() {
+    private fun showDiffPreview() {
         // 移除生成中提示
         if (::loadingHintLabel.isInitialized) {
             bottomPanel.remove(loadingHintLabel)

@@ -14,7 +14,7 @@ import javax.swing.JTextArea
 import javax.swing.SwingConstants
 
 class ExplanationDialog(project: Project?) : DialogWrapper(project) {
-    private lateinit var textArea: JTextArea
+    lateinit var textArea: JTextArea
     private lateinit var loadingPanel: JPanel
     private lateinit var contentPanel: JPanel
     private lateinit var cardLayout: CardLayout
@@ -66,8 +66,12 @@ class ExplanationDialog(project: Project?) : DialogWrapper(project) {
         return mainPanel
     }
     
-    fun showContent(explanation: String) {
-        textArea.text = explanation
+    fun showContent() {
         cardLayout.show(mainPanel, "CONTENT")
+    }
+
+    fun appendMessage(message: String) {
+        textArea.append(message)
+        textArea.caretPosition = textArea.document.length
     }
 }

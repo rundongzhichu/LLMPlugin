@@ -102,6 +102,10 @@ object HttpUtils {
         val stringBuffer = StringBuffer()
         
         try {
+            print(
+                "Calling LLM API with prompt: parseStreamResponse"
+            )
+            println("onChunkReceived")
             var line: String?
             while (reader.readLine().also { line = it } != null) {
                 if (line!!.startsWith("data: ")) {

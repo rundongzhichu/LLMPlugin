@@ -8,12 +8,15 @@ import com.intellij.openapi.ui.Messages
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.swing.Swing
 import org.demo.llmplugin.ui.RefactorInputPopup
 
 
 
 class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
+
+    private var isStream = false
     override fun update(e: AnActionEvent) {
         // 仅当有文本被选中时启用
         val editor = e.getData(CommonDataKeys.EDITOR)
@@ -46,8 +49,15 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
 
                     // 采用流式读取AI返回值，拼接成最终字符串
                     val newCode = buildString {
-                        callLLMAPI(prompt) { chunk ->
-                            append(chunk)
+                        var finalResponse = runBlocking {
+                             callLLMAPI(prompt) { chunk ->
+                                isStream = true
+                                append(chunk)
+                            }
+                        }
+                        if (!isStream) {
+                            // 显示完整响应
+                            append(finalResponse)
                         }
                     }
 

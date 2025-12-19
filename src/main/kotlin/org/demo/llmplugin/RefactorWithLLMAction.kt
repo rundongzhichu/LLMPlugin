@@ -16,7 +16,6 @@ import org.demo.llmplugin.ui.RefactorInputPopup
 
 class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
 
-    private var isStream = false
     override fun update(e: AnActionEvent) {
         // 仅当有文本被选中时启用
         val editor = e.getData(CommonDataKeys.EDITOR)
@@ -52,14 +51,11 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                         val newCode = buildString {
                             var finalResponse = runBlocking {
                                 callLLMAPI(prompt) { chunk ->
-                                    isStream = true
                                     append(chunk)
                                 }
                             }
-                            if (!isStream) {
-                                // 显示完整响应
-                                append(finalResponse)
-                            }
+                            // 显示完整响应
+                            append(finalResponse)
                         }
 
                         // 4. 将AI生成的代码和原始代码传递给popup
@@ -82,7 +78,6 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                         }
                     }
                 }
-                isStream = false
             }
         }
 
@@ -96,9 +91,5 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
         // 实际应调用 HTTP API
         return HttpUtils.callLocalLlm(prompt, onChunkReceived)
     }
-    
-    private suspend fun callLLMAPI(prompt: String): String {
-        // 实际应调用 HTTP API
-        return HttpUtils.callLocalLlm(prompt)
-    }
+
 }

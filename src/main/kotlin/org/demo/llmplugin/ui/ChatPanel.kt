@@ -170,8 +170,8 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun updateAiMessage(content: String) {
-        // 更新AI消息内容
-        aiMessageLabel?.text = content
+        // 更新AI消息内容并支持Markdown渲染
+        aiMessageLabel?.text = renderMarkdown(content)
         scrollToBottom()
     }
     
@@ -187,6 +187,35 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             foreground = Color.RED
         }
         scrollToBottom()
+    }
+
+    private fun renderMarkdown(content: String): String {
+        // 简单的Markdown渲染实现
+        var rendered = content
+        
+        // 处理粗体 (**text** 或 __text__)
+        rendered = rendered.replace(Regex("\\*\\*(.*?)\\*\\*"), "<b>$1</b>")
+        rendered = rendered.replace(Regex("__(.*?)__"), "<b>$1</b>")
+        
+        // 处理斜体 (*text* 或 _text_)
+        rendered = rendered.replace(Regex("\\*(.*?)\\*"), "<i>$1</i>")
+        rendered = rendered.replace(Regex("_(.*?)_"), "<i>$1</i>")
+        
+        // 处理行内代码 (`code`)
+        rendered = rendered.replace(Regex("`([^`]+)`"), "<code><font color='#006600'>$1</font></code>")
+        
+        // 处理标题 (# Header)
+        rendered = rendered.replace(Regex("^#\\s+(.*)", RegexOption.MULTILINE), "<h1><b>$1</b></h1>")
+        rendered = rendered.replace(Regex("^##\\s+(.*)", RegexOption.MULTILINE), "<h2><b>$1</b></h2>")
+        rendered = rendered.replace(Regex("^###\\s+(.*)", RegexOption.MULTILINE), "<h3><b>$1</b></h3>")
+        
+        // 处理无序列表项 (* item 或 - item)
+        rendered = rendered.replace(Regex("^[*\\-]\\s+(.*)", RegexOption.MULTILINE), "<li>$1</li>")
+        
+        // 处理换行
+        rendered = rendered.replace("\n", "<br>")
+        
+        return "<html>$rendered</html>"
     }
 
     private fun scrollToBottom() {

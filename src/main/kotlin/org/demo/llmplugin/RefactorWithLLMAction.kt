@@ -5,13 +5,10 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ui.Messages
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import kotlinx.coroutines.swing.Swing
 import org.demo.llmplugin.ui.RefactorInputPopup
-
+import javax.swing.SwingUtilities
 
 
 class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
@@ -46,25 +43,23 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                         Return ONLY the modified code, no explanation.
                     """.trimIndent()
 
-                    ApplicationManager.getApplication().executeOnPooledThread {
+                    val responseBuilder = StringBuilder()
+                    // 使用流式响应处理
+                    val response = withContext(Dispatchers.IO) {
+                        Thread.sleep(5000)
                         // 采用流式读取AI返回值，拼接成最终字符串
-                        val newCode = buildString {
-                            var finalResponse = runBlocking {
-                                callLLMAPI(prompt) { chunk ->
-                                    append(chunk)
-                                }
-                            }
-                            // 显示完整响应
-                            append(finalResponse)
-                        }
-
-                        // 4. 将AI生成的代码和原始代码传递给popup
-                        ApplicationManager.getApplication().invokeLater {
-                            popup.aiGeneratedCode = newCode
-                            popup.originalCode = selectedText
-                            onComplete()
+                        callLLMAPI(prompt) { chunk ->
+                            responseBuilder.append(chunk)
                         }
                     }
+
+                    // 4. 将AI生成的代码和原始代码传递给popup
+                    ApplicationManager.getApplication().invokeLater {
+                        popup.aiGeneratedCode = responseBuilder.append(response).toString()
+                        popup.originalCode = selectedText
+                        onComplete()
+                    }
+
                 } catch (ex: Exception) {
                     ApplicationManager.getApplication().invokeLater {
                         Messages.showErrorDialog(

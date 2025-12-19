@@ -34,10 +34,10 @@ class ExplainCodeAction : AnAction("Explain Selected Code") {
             try {
                 val response = runBlocking {
                     HttpUtils.callLocalLlm(prompt) { chunk ->
+                        isStream = true
                         // 流式接收数据块并在UI上逐个显示
                         ApplicationManager.getApplication().invokeLater {
                             dialog.showContent()
-                            isStream = true
                             // 追加新的内容块
                             dialog.appendMessage(chunk)
                         }
@@ -45,13 +45,13 @@ class ExplainCodeAction : AnAction("Explain Selected Code") {
                 }
                 // 显示解释结果
                 ApplicationManager.getApplication().invokeLater {
-                    if (!isStream) {
+                    if (isStream) {
+                        // 已经开始流式显示，只需添加结尾换行
+                        dialog.appendMessage("\n\n")
+                    } else {
                         dialog.showContent()
                         // 显示完整响应
                         dialog.appendMessage("$response\n\n")
-                    } else {
-                        // 已经开始流式显示，只需添加结尾换行
-                        dialog.appendMessage("\n\n")
                     }
                 }
             } catch (e: Exception) {
@@ -59,6 +59,8 @@ class ExplainCodeAction : AnAction("Explain Selected Code") {
                 ApplicationManager.getApplication().invokeLater {
                     dialog.appendMessage("Failed to explain code: ${e.message}")
                 }
+            } finally {
+                isStream = false
             }
         }
     }

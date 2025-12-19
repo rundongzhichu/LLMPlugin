@@ -17,6 +17,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val messageSpacing = 10 // 消息之间的固定间距
 
+    private var isStream =  false
     init {
         // 创建聊天历史记录显示区域容器，使用GridBagLayout确保组件从顶部开始并保持固定间距
         chatContainer = JPanel(GridBagLayout())
@@ -74,6 +75,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                     // 使用流式响应处理
                     val response = withContext(Dispatchers.IO) {
                         HttpUtils.callLocalLlm(message) { chunk ->
+                            isStream = true
                             // 流式接收数据块并在UI上逐个显示
                             SwingUtilities.invokeLater {
                                 responseBuilder.append(chunk)
@@ -84,8 +86,11 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                     
                     // 在所有数据接收完成后更新完整响应
                     SwingUtilities.invokeLater {
-                        responseBuilder.append(response)
-                        updateAiMessage(responseBuilder.toString())
+                        if(isStream) {
+                            updateAiMessage(responseBuilder.toString())
+                        } else {
+                            updateAiMessage(response)
+                        }
                         finishAiMessage()
                     }
                 } catch (e: Exception) {
@@ -100,6 +105,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                         sendButton.isEnabled = true
                         inputField.requestFocusInWindow()
                     }
+                    isStream = false
                 }
             }
             
@@ -123,8 +129,11 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             background = Color(220, 240, 255) // 浅蓝色背景
         }
         
-        val messageLabel = JLabel("<html><div style='text-align: right;'>$message</div></html>").apply {
+        val messageLabel = JLabel().apply {
             border = JBUI.Borders.empty(5)
+            text = "<html><div style='text-align: right;'>$message</div></html>"
+            font = Font(Font.DIALOG, Font.PLAIN, 12) // 使用支持中文的字体
+            foreground = Color(0, 0, 0) // 深灰色字体
         }
         
         messagePanel.add(messageLabel, BorderLayout.CENTER)
@@ -153,9 +162,11 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             background = Color(245, 245, 245) // 浅灰色背景
         }
         
-        aiMessageLabel = JLabel("AI is thinking...").apply {
+        aiMessageLabel = JLabel().apply {
             border = JBUI.Borders.empty(5)
-            foreground = Color(100, 100, 100) // 深灰色字体
+            text = "AI is thinking..."
+            foreground = Color(0, 0, 0) // 深灰色字体
+            font = Font(Font.DIALOG, Font.PLAIN, 12) // 使用支持中文的字体
         }
         
         messagePanel.add(aiMessageLabel, BorderLayout.CENTER)

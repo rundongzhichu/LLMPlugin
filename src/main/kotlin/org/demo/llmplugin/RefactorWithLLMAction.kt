@@ -13,6 +13,7 @@ import javax.swing.SwingUtilities
 
 class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
 
+    private var isStream = false
     override fun update(e: AnActionEvent) {
         // 仅当有文本被选中时启用
         val editor = e.getData(CommonDataKeys.EDITOR)
@@ -46,17 +47,21 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                     val responseBuilder = StringBuilder()
                     // 使用流式响应处理
                     val response = withContext(Dispatchers.IO) {
-                        Thread.sleep(5000)
                         // 采用流式读取AI返回值，拼接成最终字符串
                         callLLMAPI(prompt) { chunk ->
+                            isStream = true
                             responseBuilder.append(chunk)
                         }
                     }
 
                     // 4. 将AI生成的代码和原始代码传递给popup
                     ApplicationManager.getApplication().invokeLater {
-                        popup.aiGeneratedCode = responseBuilder.append(response).toString()
                         popup.originalCode = selectedText
+                        if(isStream) {
+                            popup.aiGeneratedCode = responseBuilder.toString()
+                        } else {
+                            popup.aiGeneratedCode = response
+                        }
                         onComplete()
                     }
 
@@ -72,6 +77,8 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                             onComplete()
                         }
                     }
+                } finally {
+                    isStream = false
                 }
             }
         }

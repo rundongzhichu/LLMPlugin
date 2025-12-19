@@ -158,6 +158,7 @@ class RefactorInputPopup(
         // 移除生成中提示
         if (::loadingHintLabel.isInitialized) {
             bottomPanel.remove(loadingHintLabel)
+            escHintLabel.isVisible = true
         }
         // 预览按钮：打开代码预览窗口
         aiGeneratedCode?.let { code ->

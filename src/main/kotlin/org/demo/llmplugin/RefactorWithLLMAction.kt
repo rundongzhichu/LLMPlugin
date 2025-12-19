@@ -11,13 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
 import org.demo.llmplugin.ui.RefactorInputPopup
 
-/**
- * 用户点击按钮	默认在 EDT → 可直接读 UI，但不要做耗时操作
- * 调用 AI / 网络	executeOnPooledThread → 结果用 invokeLater 回 UI
- * 修改代码	invokeLater + WriteCommandAction
- * 读取代码	后台线程可用 document.getText()；读 PSI 用 runReadAction
- * 更新 UI 组件	永远用 invokeLater 包裹
- */
+
 
 class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
     override fun update(e: AnActionEvent) {

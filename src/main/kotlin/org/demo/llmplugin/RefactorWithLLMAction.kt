@@ -47,28 +47,28 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                         Return ONLY the modified code, no explanation.
                     """.trimIndent()
 
-                    // 采用流式读取AI返回值，拼接成最终字符串
-                    val newCode = buildString {
-                        var finalResponse = runBlocking {
-                             callLLMAPI(prompt) { chunk ->
-                                isStream = true
-                                append(chunk)
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        // 采用流式读取AI返回值，拼接成最终字符串
+                        val newCode = buildString {
+                            var finalResponse = runBlocking {
+                                callLLMAPI(prompt) { chunk ->
+                                    isStream = true
+                                    append(chunk)
+                                }
+                            }
+                            if (!isStream) {
+                                // 显示完整响应
+                                append(finalResponse)
                             }
                         }
-                        if (!isStream) {
-                            // 显示完整响应
-                            append(finalResponse)
+
+                        // 4. 将AI生成的代码和原始代码传递给popup
+                        ApplicationManager.getApplication().invokeLater {
+                            popup.aiGeneratedCode = newCode
+                            popup.originalCode = selectedText
+                            onComplete()
                         }
                     }
-
-                    // 4. 将AI生成的代码和原始代码传递给popup
-                    ApplicationManager.getApplication().invokeLater {
-                        popup.aiGeneratedCode = newCode
-                        popup.originalCode = selectedText
-                    }
-
-                    // 调用完成回调
-                    onComplete()
                 } catch (ex: Exception) {
                     ApplicationManager.getApplication().invokeLater {
                         Messages.showErrorDialog(
@@ -76,10 +76,13 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                             "Failed to refactor code: ${ex.message}",
                             "LLM Error"
                         )
+                        // 即使出错也要调用完成回调
+                        ApplicationManager.getApplication().invokeLater {
+                            onComplete()
+                        }
                     }
-                    // 即使出错也要调用完成回调
-                    onComplete()
                 }
+                isStream = false
             }
         }
 

@@ -5,13 +5,15 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ui.Messages
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
+import kotlinx.coroutines.withContext
 import org.demo.llmplugin.ui.RefactorInputPopup
 import org.demo.llmplugin.util.HttpUtils
 
-
-class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
+class GenerateUnitTestAction : AnAction("Generate Unit Test") {
 
     private var isStream = false
     override fun update(e: AnActionEvent) {
@@ -25,23 +27,22 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
         val project = e.project ?: return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val selectedText = editor.selectionModel.selectedText ?: return
-        val virtualFile = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
 
         // 1. 弹出输入框（在 EDT 中）
         lateinit var popup: RefactorInputPopup
         popup = RefactorInputPopup(project, editor) { instruction, onComplete ->
-            CoroutineScope(Dispatchers.Swing).launch  {
+            CoroutineScope(Dispatchers.Swing).launch {
                 // 调用大模型的函数都封装成协程
                 try {
                     // 3. 调用 LLM（模拟或真实 API）
                     val prompt = """
-                       You are an expert programmer.
-                        Original code:
+                        You are an expert programmer.
+                        Generate unit test code for the following code:
                         ```java
                         $selectedText
                         ```
                         Instruction: $instruction
-                        Return ONLY the modified code, no explanation.
+                        Return ONLY the unit test code, no explanation.
                     """.trimIndent()
 
                     val responseBuilder = StringBuilder()
@@ -56,7 +57,8 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
 
                     // 4. 将AI生成的代码和原始代码传递给popup
                     ApplicationManager.getApplication().invokeLater {
-                        popup.originalCode = selectedText
+                        popup.mode = RefactorInputPopup.Mode.GENERATE_TEST
+                        popup.originalCode = "" // 空的原始代码，因为我们是要生成新代码
                         if(isStream) {
                             popup.aiGeneratedCode = responseBuilder.toString()
                         } else {
@@ -69,7 +71,7 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                     ApplicationManager.getApplication().invokeLater {
                         Messages.showErrorDialog(
                             project,
-                            "Failed to refactor code: ${ex.message}",
+                            "Failed to generate unit test: ${ex.message}",
                             "LLM Error"
                         )
                         // 即使出错也要调用完成回调
@@ -85,6 +87,7 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
 
         // 2. 显示输入框（在 EDT 中）
         ApplicationManager.getApplication().invokeLater {
+            popup.mode = RefactorInputPopup.Mode.GENERATE_TEST
             popup.show()
         }
     }
@@ -93,5 +96,4 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
         // 实际应调用 HTTP API
         return HttpUtils.callLocalLlm(prompt, onChunkReceived)
     }
-
 }

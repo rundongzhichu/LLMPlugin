@@ -12,6 +12,7 @@ class LocalLLMGroup : DefaultActionGroup("Local LLM Assistant", true) {
         return arrayOf(
             ExplainCodeAction(),
             RefactorWithLLMAction(),
+            GenerateUnitTestAction(),
         )
     }
 }

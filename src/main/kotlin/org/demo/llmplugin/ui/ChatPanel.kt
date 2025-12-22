@@ -4,7 +4,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.*
-import org.demo.llmplugin.HttpUtils
+import org.demo.llmplugin.util.HttpUtils
 import java.awt.*
 import javax.swing.*
 import javax.swing.text.SimpleAttributeSet

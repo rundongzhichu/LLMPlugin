@@ -1,4 +1,4 @@
-package org.demo.llmplugin
+package org.demo.llmplugin.util
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
@@ -11,6 +11,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import org.demo.llmplugin.LocalLLMSettings
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStreamReader

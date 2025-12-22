@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import kotlinx.coroutines.runBlocking
 import org.demo.llmplugin.ui.ExplanationDialog
+import org.demo.llmplugin.util.HttpUtils
 
 class ExplainCodeAction : AnAction("Explain Selected Code") {
 

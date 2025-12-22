@@ -53,16 +53,23 @@
         <group id="LocalLLMGroup" class="org.demo.llmplugin.LocalLLMGroup" popup="true">
             <action id="ExplainCodeAction"
                     class="org.demo.llmplugin.ExplainCodeAction"
-                    text="Explain Code" description="Explain Code"/>
+                    text="Explain Code" description="Explain Code"
+                    icon="AllIcons.Actions.Help"/>
             <action id="RefactorWithLLM"
                     class="org.demo.llmplugin.RefactorWithLLMAction"
                     text="Refactor with LLM"
-                    description="Modify selected code using AI" />
+                    description="Modify selected code using AI"
+                    icon="AllIcons.Actions.Edit"/>
+            <action id="GenerateUnitTest"
+                    class="org.demo.llmplugin.GenerateUnitTestAction"
+                    text="Generate Unit Test"
+                    description="Generate unit test for selected code"
+                    icon="AllIcons.Actions.Lightning"/>
         </group>
 
         <!-- 将 Group 添加到编辑器右键菜单 -->
         <action id="LocalLLMGroup.Action" class="org.demo.llmplugin.LocalLLMGroup">
-            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
         </action>
     </actions>
 

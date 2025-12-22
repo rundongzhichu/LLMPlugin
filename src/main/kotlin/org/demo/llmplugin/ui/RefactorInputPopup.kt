@@ -2,6 +2,7 @@ package org.demo.llmplugin.ui
 
 import com.intellij.diff.DiffManager
 import com.intellij.diff.contents.DocumentContentImpl
+import com.intellij.diff.contents.EmptyContent
 import com.intellij.diff.requests.SimpleDiffRequest
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -45,13 +46,19 @@ class RefactorInputPopup(
     var aiGeneratedCode: String? = null
     var originalCode: String? = null
     var fileType : FileType? = null
+    var mode: Mode = Mode.REFACTOR
+
+    enum class Mode {
+        REFACTOR,
+        GENERATE_TEST
+    }
 
     fun show() {
         textField = JBTextField()
         textField.border = EmptyBorder(5, 8, 5, 8)
         textField.preferredSize = JBUI.size(300, 30)
         // 添加输入框内部提示文字
-        textField.emptyText.text = "输入你的编码诉求"
+        textField.emptyText.text = if (mode == Mode.GENERATE_TEST) "输入测试生成要求" else "输入你的编码诉求"
 
         // 回车触发生成
         textField.addKeyListener(object : KeyAdapter() {
@@ -95,7 +102,9 @@ class RefactorInputPopup(
             // 底部面板容器
             bottomPanel = JPanel(BorderLayout()).apply {
                 // 左侧：编辑当前选区提示
-                val selectionHint = JLabel("编辑当前选区")
+                val selectionHint = JLabel(
+                    if (mode == Mode.GENERATE_TEST) "为选中代码生成测试" else "编辑当前选区"
+                )
                 selectionHint.font = JBFont.small()
                 selectionHint.foreground = JBUI.CurrentTheme.Label.disabledForeground()
                 add(selectionHint, BorderLayout.WEST)
@@ -120,7 +129,7 @@ class RefactorInputPopup(
             .setCancelOnWindowDeactivation(false)
             .setCancelKeyEnabled(false)  // 禁用ESC键以外
             .setCancelOnClickOutside(false)
-            .setTitle("LLM Refactor")
+            .setTitle(if (mode == Mode.GENERATE_TEST) "生成单元测试" else "LLM Refactor")
             .setMovable(true)
             .setModalContext(false)
             .createPopup()
@@ -157,13 +166,16 @@ class RefactorInputPopup(
         }
         // 预览按钮：打开代码预览窗口
         aiGeneratedCode?.let { code ->
-            originalCode?.let { original ->
-                ApplicationManager.getApplication().invokeLater {
-                    showAiDiffInStandardWindow(original, code)
+            ApplicationManager.getApplication().invokeLater {
+                if (mode == Mode.GENERATE_TEST) {
+                    showGeneratedCode(code)
+                } else {
+                    originalCode?.let { original ->
+                        showAiDiffInStandardWindow(original, code)
+                    }
                 }
             }
         }
-
     }
 
     private fun applyAiGeneratedCode(newCode: String) {
@@ -184,6 +196,42 @@ class RefactorInputPopup(
         }
     }
 
+    /**
+     * 显示生成的代码（用于生成测试的情况）
+     */
+    private fun showGeneratedCode(generatedCode: String) {
+        var title = "AI Generated Test Code"
+        // 创建 Document（用于语法高亮）
+        val editorFactory = EditorFactory.getInstance()
+        val generatedDoc = editorFactory.createDocument(generatedCode)
+
+        // 设置文件类型（关键！否则无高亮）
+        generatedDoc.setReadOnly(true)
+
+        // 创建 Diff 内容
+        val leftContent = DocumentContentImpl(project, generatedDoc, fileType)
+        val rightContent = EmptyContent()
+
+        // 创建请求
+        val request = SimpleDiffRequest(title, leftContent, rightContent, "Generated Test", "None")
+        
+        // 创建 Apply 按钮动作
+        val applyAction = object : AnAction("Insert Test Code", "Insert generated test code", com.intellij.icons.AllIcons.Actions.Checked) {
+            override fun actionPerformed(e: AnActionEvent) {
+                // 应用AI生成的代码
+                applyAiGeneratedCode(generatedDoc.text)
+            }
+        }
+
+        // 创建动作列表并添加Apply按钮
+        val actionList = listOf<AnAction>(applyAction)
+        request.putUserData(com.intellij.diff.util.DiffUserDataKeys.CONTEXT_ACTIONS, ArrayList(actionList))
+
+        // 在 EDT 中打开
+        ApplicationManager.getApplication().invokeLater {
+            DiffManager.getInstance().showDiff(project, request)
+        }
+    }
 
     /**
      * 显示AI生成的代码的差异
@@ -211,15 +259,10 @@ class RefactorInputPopup(
             override fun actionPerformed(e: AnActionEvent) {
                 // 应用AI生成的代码
                 applyAiGeneratedCode(originalDoc.text)
-                
-                // 查找并关闭差异窗口
-//                val diffWindow = WindowManager.getInstance().suggestParentWindow(project)
-//                diffWindow?.dispose()
             }
         }
 
-        
-        // 创建动作列表并添加Apply和Merge All按钮
+        // 创建动作列表并添加Apply按钮
         val actionList = listOf<AnAction>(applyAction)
         request.putUserData(com.intellij.diff.util.DiffUserDataKeys.CONTEXT_ACTIONS, ArrayList(actionList))
 

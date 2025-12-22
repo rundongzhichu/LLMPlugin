@@ -25,7 +25,6 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
         val project = e.project ?: return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val selectedText = editor.selectionModel.selectedText ?: return
-        val virtualFile = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
 
         // 1. 弹出输入框（在 EDT 中）
         lateinit var popup: RefactorInputPopup

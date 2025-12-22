@@ -71,18 +71,19 @@ class ContextManager {
     }
     
     /**
-     * 构建上下文代码字符串
+     * 构建上下文代码字符串（压缩版）
+     * 只保留必要的信息，减少冗余内容
      */
-    fun buildContextCode(): String {
+    fun buildCompressedContextCode(): String {
         val contextBuilder = StringBuilder()
         
         for (file in contextFiles) {
             if (file.isDirectory) {
                 // 如果是目录，递归处理目录中的文件
-                appendDirectoryContents(contextBuilder, file, "")
+                appendCompressedDirectoryContents(contextBuilder, file, "")
             } else {
                 // 如果是文件，直接添加文件内容
-                appendFileContent(contextBuilder, file, "")
+                appendCompressedFileContent(contextBuilder, file, "")
             }
         }
         
@@ -103,40 +104,57 @@ class ContextManager {
     }
     
     /**
-     * 递归添加目录内容
+     * 递归添加目录内容（压缩版）
      */
-    private fun appendDirectoryContents(builder: StringBuilder, directory: VirtualFile, indent: String) {
-        builder.append("${indent}// Directory: ${directory.name}\n")
+    private fun appendCompressedDirectoryContents(builder: StringBuilder, directory: VirtualFile, indent: String) {
+        builder.append("${indent}[目录: ${directory.name}]\n")
         
         val children = directory.children
         for (child in children) {
             if (child.isDirectory) {
-                appendDirectoryContents(builder, child, "$indent  ")
+                appendCompressedDirectoryContents(builder, child, "$indent  ")
             } else {
-                appendFileContent(builder, child, "$indent  ")
+                appendCompressedFileContent(builder, child, "$indent  ")
             }
         }
     }
     
     /**
-     * 添加单个文件的内容
+     * 添加单个文件的内容（压缩版）
+     * 只保留文件名和关键内容，去除不必要的空行和注释
      */
-    private fun appendFileContent(builder: StringBuilder, file: VirtualFile, indent: String) {
+    private fun appendCompressedFileContent(builder: StringBuilder, file: VirtualFile, indent: String) {
         try {
-            builder.append("${indent}// File: ${file.name}\n")
+            builder.append("${indent}[文件: ${file.name}]\n")
             
             val inputStream = file.inputStream
             val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
             var line: String?
+            var lineCount = 0
+            val maxLines = 800 // 限制每个文件的最大行数
             
-            while (reader.readLine().also { line = it } != null) {
-                builder.append("$indent$line\n")
+            while (reader.readLine().also { line = it } != null && lineCount < maxLines) {
+                // 过滤掉空行和纯注释行（简单过滤）
+                if (!line.isNullOrBlank()) {
+                    val trimmedLine = line!!.trim()
+                    // 简单过滤一些常见的无意义注释行
+                    if (!trimmedLine.startsWith("//") || 
+                        (trimmedLine.startsWith("//") && trimmedLine.length > 5)) {
+                        builder.append("$indent$line\n")
+                        lineCount++
+                    }
+                }
+            }
+            
+            // 如果文件内容超过限制，添加提示
+            if (lineCount >= maxLines) {
+                builder.append("${indent}// ... 文件内容已截断 ...\n")
             }
             
             builder.append("\n")
             reader.close()
         } catch (e: Exception) {
-            builder.append("${indent}// Failed to read file: ${file.name} - ${e.message}\n\n")
+            builder.append("${indent}// 读取文件失败: ${file.name} - ${e.message}\n\n")
         }
     }
     

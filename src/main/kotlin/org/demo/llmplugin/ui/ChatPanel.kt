@@ -3,17 +3,20 @@ package org.demo.llmplugin.ui
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.JBFont
 import kotlinx.coroutines.*
-import org.demo.llmplugin.util.ChatMessage
-import org.demo.llmplugin.util.ContextManager
 import org.demo.llmplugin.util.HttpUtils
+import org.demo.llmplugin.util.ContextManager
+import org.demo.llmplugin.util.ChatMessage
 import java.awt.*
 import javax.swing.*
-import javax.swing.border.TitledBorder
 import javax.swing.text.SimpleAttributeSet
 import javax.swing.text.StyleConstants
+import javax.swing.border.TitledBorder
+import javax.swing.ListSelectionModel
+import javax.swing.JTextField
+import javax.swing.JCheckBox
 
 class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val chatContainer: JPanel
@@ -28,6 +31,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val chatHistory = mutableListOf<ChatMessage>()
     private var isStream = false
     private lateinit var contextPanel: JPanel
+    private lateinit var contextListPanel: JPanel
     private lateinit var contextTable: JTable
     private lateinit var contextTableModel: ContextTableModel
 
@@ -117,7 +121,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
         }
         
-        val contextTableScrollPane = JBScrollPane(contextTable).apply {
+        val contextTableScrollPane = JScrollPane(contextTable).apply {
             verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
             horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
         }
@@ -192,8 +196,8 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             // 添加用户消息到历史记录
             chatHistory.add(ChatMessage("user", message))
             
-            // 构建包含上下文的系统消息
-            val contextCode = contextManager.buildContextCode()
+            // 构建包含上下文的系统消息（使用压缩版本）
+            val contextCode = contextManager.buildCompressedContextCode()
             val systemMessageContent = if (contextCode.isNotEmpty()) {
                 "以下代码作为上下文提供，请在回答时考虑这些信息:\n\n$contextCode"
             } else {

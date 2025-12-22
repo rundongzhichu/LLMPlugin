@@ -12,23 +12,46 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
-import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
-import org.demo.llmplugin.util.ContextManager
 import java.awt.BorderLayout
-import java.awt.Dimension
-import java.awt.FlowLayout
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
-import javax.swing.*
+import javax.swing.JLabel
+import javax.swing.JPanel
 import javax.swing.border.EmptyBorder
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.swing.Swing
+import javax.swing.JButton
+import java.awt.FlowLayout
+import javax.swing.JComponent
+import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.editor.SelectionModel
+import com.intellij.openapi.ui.Messages
+import javax.swing.JTextArea
+import javax.swing.JScrollPane
+import org.demo.llmplugin.util.ContextManager
+import javax.swing.BoxLayout
+import javax.swing.BorderFactory
+import javax.swing.Box
+import java.awt.GridBagConstraints
+import java.awt.GridBagLayout
+import java.awt.Insets
+import com.intellij.openapi.vfs.VirtualFile
+import java.awt.Color
+import java.awt.Dimension
+import javax.swing.ScrollPaneConstants
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
+import javax.swing.JTable
+import javax.swing.ListSelectionModel
+import java.awt.Component
+import javax.swing.UIManager
+import javax.swing.JTextField
+import javax.swing.JCheckBox
 
 class RefactorInputPopup(
     private val project: Project,
@@ -41,10 +64,13 @@ class RefactorInputPopup(
     private lateinit var escHintLabel: JLabel
     private lateinit var loadingHintLabel: JLabel
     private lateinit var bottomPanel: JPanel
-
+    private lateinit var buttonPanel: JPanel
+    private lateinit var previewButton: JButton
+    private lateinit var cancelButton: JButton
     private lateinit var contextPanel: JPanel
     private lateinit var contextTable: JTable
     private lateinit var contextTableModel: ContextTableModel
+    private lateinit var contextLabel: JLabel
     var aiGeneratedCode: String? = null
     var originalCode: String? = null
     var fileType : FileType? = null
@@ -273,8 +299,8 @@ class RefactorInputPopup(
         // 更新上下文面板
         updateContextPanel()
         
-        // 构建上下文代码字符串
-        contextCode = contextManager.buildContextCode()
+        // 构建上下文代码字符串（使用压缩版本）
+        contextCode = contextManager.buildCompressedContextCode()
         
         // 显示提示信息
         if (addedCount < selectedFiles.size) {
@@ -297,8 +323,8 @@ class RefactorInputPopup(
         // 更新上下文面板
         updateContextPanel()
         
-        // 重新构建上下文代码字符串
-        contextCode = contextManager.buildContextCode()
+        // 重新构建上下文代码字符串（使用压缩版本）
+        contextCode = contextManager.buildCompressedContextCode()
     }
 
     /**

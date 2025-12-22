@@ -3,23 +3,17 @@ package org.demo.llmplugin.ui
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.JBFont
+import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.*
-import org.demo.llmplugin.util.HttpUtils
-import org.demo.llmplugin.util.ContextManager
 import org.demo.llmplugin.util.ChatMessage
+import org.demo.llmplugin.util.ContextManager
+import org.demo.llmplugin.util.HttpUtils
 import java.awt.*
 import javax.swing.*
+import javax.swing.border.TitledBorder
 import javax.swing.text.SimpleAttributeSet
 import javax.swing.text.StyleConstants
-import javax.swing.border.TitledBorder
-import javax.swing.table.AbstractTableModel
-import javax.swing.ListSelectionModel
-import javax.swing.table.TableCellRenderer
-import javax.swing.DefaultCellEditor
-import javax.swing.JTextField
-import javax.swing.JCheckBox
 
 class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val chatContainer: JPanel
@@ -34,50 +28,8 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val chatHistory = mutableListOf<ChatMessage>()
     private var isStream = false
     private lateinit var contextPanel: JPanel
-    private lateinit var contextListPanel: JPanel
     private lateinit var contextTable: JTable
     private lateinit var contextTableModel: ContextTableModel
-
-    // 上下文文件表格模型
-    inner class ContextTableModel : AbstractTableModel() {
-        private val columnNames = arrayOf("文件名", "操作")
-        private var data: List<VirtualFile> = emptyList()
-
-        fun setData(files: Set<VirtualFile>) {
-            data = files.toList()
-            fireTableDataChanged()
-        }
-
-        override fun getRowCount(): Int = data.size
-
-        override fun getColumnCount(): Int = columnNames.size
-
-        override fun getColumnName(column: Int): String = columnNames[column]
-
-        override fun getValueAt(rowIndex: Int, columnIndex: Int): Any? {
-            val file = data[rowIndex]
-            return when (columnIndex) {
-                0 -> file.name
-                1 -> "x"
-                else -> null
-            }
-        }
-
-        override fun isCellEditable(rowIndex: Int, columnIndex: Int): Boolean {
-            return columnIndex == 1 // 只有操作列可编辑
-        }
-
-        override fun setValueAt(value: Any?, rowIndex: Int, columnIndex: Int) {
-            if (columnIndex == 1) {
-                val file = data[rowIndex]
-                removeContextFile(file)
-            }
-        }
-
-        fun getFileAt(row: Int): VirtualFile? {
-            return if (row >= 0 && row < data.size) data[row] else null
-        }
-    }
 
     init {
         // 创建聊天历史记录显示区域容器，使用GridBagLayout确保组件从顶部开始并保持固定间距
@@ -151,18 +103,21 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         // 创建表格模型和表格
         contextTableModel = ContextTableModel()
+        val contextTableEditor = ContextTableButtonEditor(JTextField())
+        contextTableEditor.onRemove = { file -> removeContextFile(file) }
+        
         contextTable = JTable(contextTableModel).apply {
             tableHeader
             setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
             setDefaultRenderer(Object::class.java, ContextTableCellRenderer())
-            setDefaultEditor(Object::class.java, ContextTableButtonEditor(JTextField()))
+            setDefaultEditor(Object::class.java, contextTableEditor)
             intercellSpacing = Dimension(0, 0)
             rowHeight = 25
             setShowGrid(false)
             autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
         }
         
-        val contextTableScrollPane = JScrollPane(contextTable).apply {
+        val contextTableScrollPane = JBScrollPane(contextTable).apply {
             verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
             horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
         }
@@ -454,60 +409,5 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
         chatContainer.revalidate()
         chatContainer.repaint()
-    }
-
-    // 表格单元格渲染器
-    inner class ContextTableCellRenderer : TableCellRenderer {
-        private val label = JLabel()
-        private val button = JButton("x")
-        
-        init {
-            label.font = JBFont.small()
-            label.isOpaque = true
-            button.font = JBFont.small()
-            button.margin = JBUI.insets(0, 3, 0, 3)
-            button.toolTipText = "移除此文件"
-        }
-
-        override fun getTableCellRendererComponent(table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int): Component {
-            when (column) {
-                0 -> {
-                    label.text = value as String?
-                    label.background = if (isSelected) table?.selectionBackground else table?.background
-                    label.foreground = if (isSelected) table?.selectionForeground else table?.foreground
-                    return label
-                }
-                1 -> {
-                    return button
-                }
-                else -> {
-                    label.text = ""
-                    return label
-                }
-            }
-        }
-    }
-
-    // 表格按钮编辑器
-    inner class ContextTableButtonEditor(textField: JTextField) : DefaultCellEditor(textField) {
-        private val button = JButton("x")
-        private var row = -1
-        
-        init {
-            button.font = JBFont.small()
-            button.margin = JBUI.insets(0, 3, 0, 3)
-            button.toolTipText = "移除此文件"
-            button.addActionListener {
-                val file = contextTableModel.getFileAt(row)
-                file?.let { removeContextFile(it) }
-            }
-        }
-
-        override fun getTableCellEditorComponent(table: JTable?, value: Any?, isSelected: Boolean, row: Int, column: Int): Component {
-            this.row = row
-            return button
-        }
-
-        override fun getCellEditorValue(): Any = "x"
     }
 }

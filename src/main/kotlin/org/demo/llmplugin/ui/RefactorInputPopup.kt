@@ -12,47 +12,23 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
+import org.demo.llmplugin.util.ContextManager
 import java.awt.BorderLayout
+import java.awt.Dimension
+import java.awt.FlowLayout
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
-import javax.swing.JLabel
-import javax.swing.JPanel
+import javax.swing.*
 import javax.swing.border.EmptyBorder
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.swing.Swing
-import javax.swing.JButton
-import java.awt.FlowLayout
-import javax.swing.JComponent
-import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.editor.SelectionModel
-import com.intellij.openapi.ui.Messages
-import javax.swing.JTextArea
-import javax.swing.JScrollPane
-import org.demo.llmplugin.util.ContextManager
-import javax.swing.BoxLayout
-import javax.swing.BorderFactory
-import javax.swing.Box
-import java.awt.GridBagConstraints
-import java.awt.GridBagLayout
-import java.awt.Insets
-import com.intellij.openapi.vfs.VirtualFile
-import java.awt.Color
-import java.awt.Dimension
-import javax.swing.ScrollPaneConstants
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
-import javax.swing.JTable
-import javax.swing.table.AbstractTableModel
-import javax.swing.ListSelectionModel
-import java.awt.Component
-import javax.swing.UIManager
-import javax.swing.JTextField
-import javax.swing.JCheckBox
 
 class RefactorInputPopup(
     private val project: Project,
@@ -65,13 +41,10 @@ class RefactorInputPopup(
     private lateinit var escHintLabel: JLabel
     private lateinit var loadingHintLabel: JLabel
     private lateinit var bottomPanel: JPanel
-    private lateinit var buttonPanel: JPanel
-    private lateinit var previewButton: JButton
-    private lateinit var cancelButton: JButton
+
     private lateinit var contextPanel: JPanel
     private lateinit var contextTable: JTable
     private lateinit var contextTableModel: ContextTableModel
-    private lateinit var contextLabel: JLabel
     var aiGeneratedCode: String? = null
     var originalCode: String? = null
     var fileType : FileType? = null
@@ -83,47 +56,6 @@ class RefactorInputPopup(
     enum class Mode {
         REFACTOR,
         GENERATE_TEST
-    }
-
-    // 上下文文件表格模型
-    inner class ContextTableModel : AbstractTableModel() {
-        private val columnNames = arrayOf("文件名", "操作")
-        private var data: List<VirtualFile> = emptyList()
-
-        fun setData(files: Set<VirtualFile>) {
-            data = files.toList()
-            fireTableDataChanged()
-        }
-
-        override fun getRowCount(): Int = data.size
-
-        override fun getColumnCount(): Int = columnNames.size
-
-        override fun getColumnName(column: Int): String = columnNames[column]
-
-        override fun getValueAt(rowIndex: Int, columnIndex: Int): Any? {
-            val file = data[rowIndex]
-            return when (columnIndex) {
-                0 -> file.name
-                1 -> "x"
-                else -> null
-            }
-        }
-
-        override fun isCellEditable(rowIndex: Int, columnIndex: Int): Boolean {
-            return columnIndex == 1 // 只有操作列可编辑
-        }
-
-        override fun setValueAt(value: Any?, rowIndex: Int, columnIndex: Int) {
-            if (columnIndex == 1) {
-                val file = data[rowIndex]
-                removeContextFile(file)
-            }
-        }
-
-        fun getFileAt(row: Int): VirtualFile? {
-            return if (row >= 0 && row < data.size) data[row] else null
-        }
     }
 
     fun show() {
@@ -190,11 +122,14 @@ class RefactorInputPopup(
         
         // 创建表格模型和表格
         contextTableModel = ContextTableModel()
+        val contextTableEditor = ContextTableButtonEditor(JTextField())
+        contextTableEditor.onRemove = { file -> removeContextFile(file) }
+        
         contextTable = JTable(contextTableModel).apply {
             tableHeader
             setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
             setDefaultRenderer(Object::class.java, ContextTableCellRenderer())
-            setDefaultEditor(Object::class.java, ContextTableButtonEditor(JTextField()))
+            setDefaultEditor(Object::class.java, contextTableEditor)
             intercellSpacing = Dimension(0, 0)
             rowHeight = 25
             setShowGrid(false)
@@ -520,60 +455,5 @@ class RefactorInputPopup(
         ApplicationManager.getApplication().invokeLater {
             DiffManager.getInstance().showDiff(project, request)
         }
-    }
-
-    // 表格单元格渲染器
-    inner class ContextTableCellRenderer : javax.swing.table.TableCellRenderer {
-        private val label = JLabel()
-        private val button = JButton("x")
-        
-        init {
-            label.font = JBFont.small()
-            label.isOpaque = true
-            button.font = JBFont.small()
-            button.margin = JBUI.insets(0, 3, 0, 3)
-            button.toolTipText = "移除此文件"
-        }
-
-        override fun getTableCellRendererComponent(table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int): Component {
-            when (column) {
-                0 -> {
-                    label.text = value as String?
-                    label.background = if (isSelected) table?.selectionBackground else table?.background
-                    label.foreground = if (isSelected) table?.selectionForeground else table?.foreground
-                    return label
-                }
-                1 -> {
-                    return button
-                }
-                else -> {
-                    label.text = ""
-                    return label
-                }
-            }
-        }
-    }
-
-    // 表格按钮编辑器
-    inner class ContextTableButtonEditor(textField: JTextField) : javax.swing.DefaultCellEditor(textField) {
-        private val button = JButton("x")
-        private var row = -1
-        
-        init {
-            button.font = JBFont.small()
-            button.margin = JBUI.insets(0, 3, 0, 3)
-            button.toolTipText = "移除此文件"
-            button.addActionListener {
-                val file = contextTableModel.getFileAt(row)
-                file?.let { removeContextFile(it) }
-            }
-        }
-
-        override fun getTableCellEditorComponent(table: JTable?, value: Any?, isSelected: Boolean, row: Int, column: Int): Component {
-            this.row = row
-            return button
-        }
-
-        override fun getCellEditorValue(): Any = "x"
     }
 }

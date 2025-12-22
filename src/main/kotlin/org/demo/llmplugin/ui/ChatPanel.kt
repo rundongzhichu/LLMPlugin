@@ -5,6 +5,8 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.*
 import org.demo.llmplugin.util.HttpUtils
+import org.demo.llmplugin.util.ContextManager
+import org.demo.llmplugin.util.ChatMessage
 import java.awt.*
 import javax.swing.*
 import javax.swing.text.SimpleAttributeSet
@@ -14,12 +16,14 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val chatContainer: JPanel
     private val inputField: JTextField
     private val sendButton: JButton
+    private val addButton: JButton
     private var aiMessageTextPane: JTextPane? = null
     private lateinit var scrollPane: JBScrollPane
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val messageSpacing = 10 // 消息之间的固定间距
-
-    private var isStream =  false
+    private val contextManager = ContextManager.getInstance()
+    private val chatHistory = mutableListOf<ChatMessage>()
+    private var isStream = false
 
     init {
         // 创建聊天历史记录显示区域容器，使用GridBagLayout确保组件从顶部开始并保持固定间距
@@ -35,9 +39,19 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         val inputPanel = JPanel(BorderLayout())
         inputField = JTextField()
         sendButton = JButton("Send")
+        addButton = JButton("+")
+
+        // 设置按钮提示
+        addButton.toolTipText = "添加文件到上下文"
+        sendButton.toolTipText = "发送消息"
+
+        val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 5, 0)).apply {
+            add(addButton)
+            add(sendButton)
+        }
 
         inputPanel.add(inputField, BorderLayout.CENTER)
-        inputPanel.add(sendButton, BorderLayout.EAST)
+        inputPanel.add(buttonPanel, BorderLayout.EAST)
 
         // 添加组件到主面板
         add(JLabel("AI Chat").apply { 
@@ -52,9 +66,32 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             sendMessage()
         }
 
+        addButton.addActionListener {
+            addFilesToContext()
+        }
+
         inputField.addActionListener {
             sendMessage()
         }
+        
+        // 添加系统消息介绍上下文功能
+        addSystemMessage("欢迎使用AI助手！点击'+'按钮可以添加文件到上下文，帮助AI更好地理解您的需求。")
+    }
+
+    private fun addFilesToContext() {
+        // 使用ContextManager选择文件
+        val selectedFiles = contextManager.showFileChooser(project)
+        
+        // 批量添加文件到上下文管理器中
+        val addedCount = contextManager.addFilesToContext(selectedFiles)
+        
+        // 显示一条消息，告知用户已添加文件到上下文
+        val message = if (addedCount == selectedFiles.size) {
+            "已将 ${selectedFiles.size} 个文件添加到上下文"
+        } else {
+            "已将 $addedCount 个新文件添加到上下文（${selectedFiles.size - addedCount} 个文件已存在）"
+        }
+        addSystemMessage(message)
     }
 
     private fun sendMessage() {
@@ -63,7 +100,23 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             // 显示用户消息
             addUserMessage(message)
             
-            // 禁用输入框和发送按钮
+            // 添加用户消息到历史记录
+            chatHistory.add(ChatMessage("user", message))
+            
+            // 构建包含上下文的系统消息
+            val contextCode = contextManager.buildContextCode()
+            val systemMessageContent = if (contextCode.isNotEmpty()) {
+                "以下代码作为上下文提供，请在回答时考虑这些信息:\n\n$contextCode"
+            } else {
+                "你是一个专业的编程助手，帮助用户解答编程相关问题。"
+            }
+            
+            // 准备消息列表
+            val messages = mutableListOf<ChatMessage>()
+            messages.add(ChatMessage("system", systemMessageContent))
+            messages.addAll(chatHistory)
+            
+            // 要用输入框和发送按钮
             inputField.isEnabled = false
             sendButton.isEnabled = false
             
@@ -77,7 +130,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                     
                     // 使用流式响应处理
                     val response = withContext(Dispatchers.IO) {
-                        HttpUtils.callLocalLlm(message) { chunk ->
+                        HttpUtils.callLocalLlm(messages) { chunk ->
                             isStream = true
                             // 流式接收数据块并在UI上逐个显示
                             SwingUtilities.invokeLater {
@@ -86,6 +139,9 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                             }
                         }
                     }
+                    
+                    // 添加AI回复到历史记录
+                    chatHistory.add(ChatMessage("assistant", response))
                     
                     // 在所有数据接收完成后更新完整响应
                     SwingUtilities.invokeLater {
@@ -151,6 +207,46 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         
         // 创建一个包装面板，将消息靠右对齐
         val wrapper = JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
+            add(messagePanel)
+        }
+        
+        chatContainer.add(wrapper, gbc)
+        scrollToBottom()
+    }
+
+    private fun addSystemMessage(message: String) {
+        val gbc = GridBagConstraints().apply {
+            gridx = 0
+            gridy = chatContainer.componentCount
+            anchor = GridBagConstraints.NORTHWEST
+            fill = GridBagConstraints.HORIZONTAL
+            weightx = 1.0
+            insets = Insets(messageSpacing, 0, 0, 0)
+        }
+        
+        val messagePanel = JPanel(BorderLayout()).apply {
+            border = JBUI.Borders.empty(5, 10)
+            background = Color(50, 50, 50) // 灰色背景表示系统消息
+        }
+        
+        val messageTextPane = JTextPane().apply {
+            border = JBUI.Borders.empty(5)
+            text = message
+            isEditable = false
+            font = Font(Font.DIALOG, Font.PLAIN, 12)
+            isOpaque = false
+            // 使用样式设置文本颜色
+            val style = SimpleAttributeSet()
+            StyleConstants.setForeground(style, Color.LIGHT_GRAY)
+            StyleConstants.setAlignment(style, StyleConstants.ALIGN_CENTER)
+            styledDocument.setParagraphAttributes(0, styledDocument.length, style, false)
+        }
+
+        
+        messagePanel.add(messageTextPane, BorderLayout.CENTER)
+        
+        // 创建一个包装面板，将消息居中对齐
+        val wrapper = JPanel(FlowLayout(FlowLayout.CENTER)).apply {
             add(messagePanel)
         }
         

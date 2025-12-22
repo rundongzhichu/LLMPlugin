@@ -29,6 +29,12 @@ import kotlinx.coroutines.swing.Swing
 import javax.swing.JButton
 import java.awt.FlowLayout
 import javax.swing.JComponent
+import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.editor.SelectionModel
+import com.intellij.openapi.ui.Messages
+import javax.swing.JTextArea
+import javax.swing.JScrollPane
+import org.demo.llmplugin.util.ContextManager
 
 class RefactorInputPopup(
     private val project: Project,
@@ -47,6 +53,9 @@ class RefactorInputPopup(
     var originalCode: String? = null
     var fileType : FileType? = null
     var mode: Mode = Mode.REFACTOR
+    var presetTemplate: String = ""
+    var contextCode: String? = null
+    private val contextManager = ContextManager.getInstance()
 
     enum class Mode {
         REFACTOR,
@@ -58,7 +67,16 @@ class RefactorInputPopup(
         textField.border = EmptyBorder(5, 8, 5, 8)
         textField.preferredSize = JBUI.size(300, 30)
         // 添加输入框内部提示文字
-        textField.emptyText.text = if (mode == Mode.GENERATE_TEST) "输入测试生成要求" else "输入你的编码诉求"
+        val placeholderText = when (mode) {
+            Mode.GENERATE_TEST -> "输入测试生成要求"
+            else -> "输入你的编码诉求"
+        }
+        textField.emptyText.text = placeholderText
+        
+        // 如果有预设模板，则将其设置为文本框的默认值
+        if (mode == Mode.GENERATE_TEST && presetTemplate.isNotEmpty()) {
+            textField.text = presetTemplate
+        }
 
         // 回车触发生成
         textField.addKeyListener(object : KeyAdapter() {
@@ -269,6 +287,30 @@ class RefactorInputPopup(
         // 在 EDT 中打开
         ApplicationManager.getApplication().invokeLater {
             DiffManager.getInstance().showDiff(project, request)
+        }
+    }
+    
+    /**
+     * 显示上下文代码输入对话框
+     */
+    fun showContextCodeDialog() {
+        // 使用ContextManager选择文件
+        val selectedFiles = contextManager.showFileChooser(project)
+        
+        // 批量添加文件到上下文管理器中
+        val addedCount = contextManager.addFilesToContext(selectedFiles)
+        
+        // 构建上下文代码字符串
+        contextCode = contextManager.buildContextCode()
+        
+        // 显示提示信息
+        if (addedCount < selectedFiles.size) {
+            Messages.showMessageDialog(
+                project,
+                "已添加 $addedCount 个新文件到上下文（${selectedFiles.size - addedCount} 个文件已存在）",
+                "上下文文件添加结果",
+                Messages.getInformationIcon()
+            )
         }
     }
 }

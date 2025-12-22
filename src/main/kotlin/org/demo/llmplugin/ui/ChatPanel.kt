@@ -129,8 +129,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         
         val messagePanel = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.empty(5, 10)
-            background = Color(220, 240, 255) // 浅蓝色背景
-            foreground = Color(0, 0, 0) // 深灰色字体
+            background = Color(0, 0, 0)
         }
         
         val messageTextPane = JTextPane().apply {
@@ -138,21 +137,17 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             text = message
             isEditable = false
             font = Font(Font.DIALOG, Font.PLAIN, 12)
+            isOpaque = false
             // 设置文本右对齐
+            // 使用样式设置文本颜色，避免背景变黑
             val style = SimpleAttributeSet()
+            StyleConstants.setForeground(style, Color.WHITE)  // 设置黑色文本
             StyleConstants.setAlignment(style, StyleConstants.ALIGN_RIGHT)
             styledDocument.setParagraphAttributes(0, styledDocument.length, style, false)
         }
+
         
-        // 将JTextPane包装在JScrollPane中以支持滚动
-        val messageScrollPane = JBScrollPane(messageTextPane).apply {
-            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
-            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
-            preferredSize = Dimension(400, 50)
-            maximumSize = Dimension(Integer.MAX_VALUE, 100)
-        }
-        
-        messagePanel.add(messageScrollPane, BorderLayout.CENTER)
+        messagePanel.add(messageTextPane, BorderLayout.CENTER)
         
         // 创建一个包装面板，将消息靠右对齐
         val wrapper = JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
@@ -175,7 +170,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         
         val messagePanel = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.empty(5, 10)
-            background = Color(245, 245, 245) // 浅灰色背景
+            background = Color(0, 0, 0)
         }
         
         aiMessageTextPane = JTextPane().apply {
@@ -183,18 +178,15 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             text = "AI is thinking..."
             isEditable = false
             font = Font(Font.DIALOG, Font.PLAIN, 12)
-            foreground = Color(0, 0, 0) // 深灰色字体
+            isOpaque = false
+            // 使用样式设置文本颜色，避免背景变黑
+            val style = SimpleAttributeSet()
+            StyleConstants.setForeground(style, Color.WHITE)  // 设置黑色文本
+            styledDocument.setParagraphAttributes(0, styledDocument.length, style, false)
         }
+
         
-        // 将JTextPane包装在JScrollPane中以支持滚动
-        val messageScrollPane = JBScrollPane(aiMessageTextPane).apply {
-            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
-            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
-            preferredSize = Dimension(400, 50)
-            maximumSize = Dimension(Integer.MAX_VALUE, 100)
-        }
-        
-        messagePanel.add(messageScrollPane, BorderLayout.CENTER)
+        messagePanel.add(aiMessageTextPane, BorderLayout.CENTER)
         
         // 创建一个包装面板，将消息靠左对齐
         val wrapper = JPanel(FlowLayout(FlowLayout.LEFT)).apply {

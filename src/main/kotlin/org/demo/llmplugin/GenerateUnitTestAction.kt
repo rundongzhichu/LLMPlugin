@@ -111,20 +111,6 @@ class GenerateUnitTestAction : AnAction("Generate Unit Test") {
                     "4. 性能测试: （如适用，请考虑性能相关的测试用例）\n" +
                     "5. 安全性测试: （如适用，请考虑安全性相关的测试场景）"
             
-            // 询问用户是否需要添加上下文代码
-            val result = Messages.showYesNoDialog(
-                project,
-                "是否需要为生成测试提供上下文代码？\n上下文代码可以帮助AI更好地理解被测试代码的依赖关系和使用场景。",
-                "添加上下文代码",
-                "添加上下文代码",
-                "直接生成测试",
-                Messages.getQuestionIcon()
-            )
-            
-            if (result == Messages.YES) {
-                popup.showContextCodeDialog()
-            }
-            
             popup.show()
         }
     }

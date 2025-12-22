@@ -149,5 +149,12 @@ class ContextManager {
                 INSTANCE ?: ContextManager().also { INSTANCE = it }
             }
         }
+        
+        /**
+         * 创建一个新的独立上下文管理器实例
+         */
+        fun createInstance(): ContextManager {
+            return ContextManager()
+        }
     }
 }

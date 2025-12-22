@@ -15,7 +15,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.awt.RelativePoint
-import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
@@ -35,6 +34,25 @@ import com.intellij.openapi.ui.Messages
 import javax.swing.JTextArea
 import javax.swing.JScrollPane
 import org.demo.llmplugin.util.ContextManager
+import javax.swing.BoxLayout
+import javax.swing.BorderFactory
+import javax.swing.Box
+import java.awt.GridBagConstraints
+import java.awt.GridBagLayout
+import java.awt.Insets
+import com.intellij.openapi.vfs.VirtualFile
+import java.awt.Color
+import java.awt.Dimension
+import javax.swing.ScrollPaneConstants
+import javax.swing.event.DocumentEvent
+import javax.swing.event.DocumentListener
+import javax.swing.JTable
+import javax.swing.table.AbstractTableModel
+import javax.swing.ListSelectionModel
+import java.awt.Component
+import javax.swing.UIManager
+import javax.swing.JTextField
+import javax.swing.JCheckBox
 
 class RefactorInputPopup(
     private val project: Project,
@@ -42,47 +60,104 @@ class RefactorInputPopup(
     private val onGenerate: (String, () -> Unit) -> Unit  // 修改回调签名，添加完成回调
 ) {
     private var popup: JBPopup? = null
-    private lateinit var textField: JBTextField
+    private lateinit var textArea: JTextArea
+    private lateinit var textScrollPane: JScrollPane
     private lateinit var escHintLabel: JLabel
     private lateinit var loadingHintLabel: JLabel
     private lateinit var bottomPanel: JPanel
     private lateinit var buttonPanel: JPanel
     private lateinit var previewButton: JButton
     private lateinit var cancelButton: JButton
+    private lateinit var contextPanel: JPanel
+    private lateinit var contextTable: JTable
+    private lateinit var contextTableModel: ContextTableModel
+    private lateinit var contextLabel: JLabel
     var aiGeneratedCode: String? = null
     var originalCode: String? = null
     var fileType : FileType? = null
     var mode: Mode = Mode.REFACTOR
     var presetTemplate: String = ""
     var contextCode: String? = null
-    private val contextManager = ContextManager.getInstance()
+    private val contextManager = ContextManager.createInstance()
 
     enum class Mode {
         REFACTOR,
         GENERATE_TEST
     }
 
-    fun show() {
-        textField = JBTextField()
-        textField.border = EmptyBorder(5, 8, 5, 8)
-        textField.preferredSize = JBUI.size(300, 30)
-        // 添加输入框内部提示文字
-        val placeholderText = when (mode) {
-            Mode.GENERATE_TEST -> "输入测试生成要求"
-            else -> "输入你的编码诉求"
-        }
-        textField.emptyText.text = placeholderText
-        
-        // 如果有预设模板，则将其设置为文本框的默认值
-        if (mode == Mode.GENERATE_TEST && presetTemplate.isNotEmpty()) {
-            textField.text = presetTemplate
+    // 上下文文件表格模型
+    inner class ContextTableModel : AbstractTableModel() {
+        private val columnNames = arrayOf("文件名", "操作")
+        private var data: List<VirtualFile> = emptyList()
+
+        fun setData(files: Set<VirtualFile>) {
+            data = files.toList()
+            fireTableDataChanged()
         }
 
-        // 回车触发生成
-        textField.addKeyListener(object : KeyAdapter() {
+        override fun getRowCount(): Int = data.size
+
+        override fun getColumnCount(): Int = columnNames.size
+
+        override fun getColumnName(column: Int): String = columnNames[column]
+
+        override fun getValueAt(rowIndex: Int, columnIndex: Int): Any? {
+            val file = data[rowIndex]
+            return when (columnIndex) {
+                0 -> file.name
+                1 -> "x"
+                else -> null
+            }
+        }
+
+        override fun isCellEditable(rowIndex: Int, columnIndex: Int): Boolean {
+            return columnIndex == 1 // 只有操作列可编辑
+        }
+
+        override fun setValueAt(value: Any?, rowIndex: Int, columnIndex: Int) {
+            if (columnIndex == 1) {
+                val file = data[rowIndex]
+                removeContextFile(file)
+            }
+        }
+
+        fun getFileAt(row: Int): VirtualFile? {
+            return if (row >= 0 && row < data.size) data[row] else null
+        }
+    }
+
+    fun show() {
+        // 创建多行文本区域
+        textArea = JTextArea(3, 30)
+        textArea.border = EmptyBorder(5, 8, 5, 8)
+        
+        // 设置初始文本
+        textArea.text = if (mode == Mode.GENERATE_TEST && presetTemplate.isNotEmpty()) {
+            presetTemplate
+        } else {
+            ""
+        }
+
+        // 监听文本变化以调整高度
+        textArea.document.addDocumentListener(object : DocumentListener {
+            override fun insertUpdate(e: DocumentEvent?) {
+                adjustTextAreaHeight()
+            }
+
+            override fun removeUpdate(e: DocumentEvent?) {
+                adjustTextAreaHeight()
+            }
+
+            override fun changedUpdate(e: DocumentEvent?) {
+                adjustTextAreaHeight()
+            }
+        })
+
+        // 回车触发生成（Ctrl+Enter）
+        textArea.addKeyListener(object : KeyAdapter() {
             override fun keyPressed(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_ENTER && !e.isShiftDown) {
-                    val text = textField.text.trim()
+                if (e.keyCode == KeyEvent.VK_ENTER && e.isControlDown) {
+                    val text = textArea.text.trim()
                     if (text.isNotEmpty()) {
                         showLoading()
                         // 使用executeOnPooledThread在后台线程执行生成逻辑
@@ -101,48 +176,109 @@ class RefactorInputPopup(
             }
         })
 
-        val panel = JPanel(BorderLayout()).apply {
-            border = JBUI.Borders.empty(8)
-            
-            // 输入框区域
-            val inputPanel = JPanel(BorderLayout()).apply {
-                border = JBUI.Borders.empty(2, 0, 8, 0) // 增加底部边距
-                add(textField, BorderLayout.CENTER)
-
-                // 输入框后面的Enter生成提示
-                val enterHint = JLabel("Enter生成")
-                enterHint.font = JBFont.small()
-                enterHint.foreground = JBUI.CurrentTheme.Label.disabledForeground()
-                add(enterHint, BorderLayout.EAST)
-            }
-            add(inputPanel, BorderLayout.NORTH)
-
-            // 底部面板容器
-            bottomPanel = JPanel(BorderLayout()).apply {
-                // 左侧：编辑当前选区提示
-                val selectionHint = JLabel(
-                    if (mode == Mode.GENERATE_TEST) "为选中代码生成测试" else "编辑当前选区"
-                )
-                selectionHint.font = JBFont.small()
-                selectionHint.foreground = JBUI.CurrentTheme.Label.disabledForeground()
-                add(selectionHint, BorderLayout.WEST)
-                
-                // 右侧：ESC退出标签（初始状态）
-                escHintLabel = JLabel("ESC退出")
-                escHintLabel.font = JBFont.small()
-                escHintLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
-                add(escHintLabel, BorderLayout.EAST)
-            }
-            add(bottomPanel, BorderLayout.SOUTH)
+        // 创建带滚动条的文本区域
+        textScrollPane = JScrollPane(textArea).apply {
+            verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
+            border = EmptyBorder(0, 0, 0, 0)
+            preferredSize = Dimension(400, 80) // 设置首选大小
         }
 
+        // 创建上下文面板
+        contextPanel = JPanel(BorderLayout())
+        contextPanel.border = BorderFactory.createTitledBorder("上下文文件")
+        
+        // 创建表格模型和表格
+        contextTableModel = ContextTableModel()
+        contextTable = JTable(contextTableModel).apply {
+            tableHeader
+            setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
+            setDefaultRenderer(Object::class.java, ContextTableCellRenderer())
+            setDefaultEditor(Object::class.java, ContextTableButtonEditor(JTextField()))
+            intercellSpacing = Dimension(0, 0)
+            rowHeight = 25
+            setShowGrid(false)
+            autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
+        }
+        
+        val contextTableScrollPane = JScrollPane(contextTable).apply {
+            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+            preferredSize = Dimension(0, 100)
+        }
+        
+        contextPanel.add(contextTableScrollPane, BorderLayout.CENTER)
+        updateContextPanel()
+
+        val panel = JPanel(BorderLayout()).apply {
+            border = JBUI.Borders.empty(8)
+        }
+
+        // 输入框区域
+        val inputPanel = JPanel(BorderLayout()).apply {
+            border = JBUI.Borders.empty(2, 0, 8, 0) // 增加底部边距
+            add(textScrollPane, BorderLayout.CENTER)
+        }
+        
+        // 添加按钮面板
+        val addButton = JButton("+")
+        addButton.toolTipText = "添加上下文文件"
+        addButton.addActionListener {
+            addContextFiles()
+        }
+        
+        val generateButton = JButton("生成 (Ctrl+Enter)")
+        generateButton.addActionListener {
+            val text = textArea.text.trim()
+            if (text.isNotEmpty()) {
+                showLoading()
+                // 使用executeOnPooledThread在后台线程执行生成逻辑
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    onGenerate(text) {
+                        // 在EDT线程更新UI
+                        ApplicationManager.getApplication().invokeLater {
+                            showDiffPreview()
+                        }
+                    }
+                }
+            }
+        }
+        
+        val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
+            add(addButton)
+            add(generateButton)
+        }
+
+        // 底部面板容器
+        bottomPanel = JPanel(BorderLayout()).apply {
+            // 左侧：编辑当前选区提示
+            val selectionHint = JLabel(
+                if (mode == Mode.GENERATE_TEST) "为选中代码生成测试" else "编辑当前选区"
+            )
+            selectionHint.font = JBFont.small()
+            selectionHint.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            add(selectionHint, BorderLayout.WEST)
+            
+            // 右侧：ESC退出标签（初始状态）
+            escHintLabel = JLabel("ESC退出")
+            escHintLabel.font = JBFont.small()
+            escHintLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            add(escHintLabel, BorderLayout.EAST)
+        }
+        
+        // 组装主面板
+        panel.add(inputPanel, BorderLayout.NORTH)
+        panel.add(contextPanel, BorderLayout.CENTER)
+        panel.add(buttonPanel, BorderLayout.EAST)
+        panel.add(bottomPanel, BorderLayout.SOUTH)
+
         popup = JBPopupFactory.getInstance()
-            .createComponentPopupBuilder(panel, textField)
+            .createComponentPopupBuilder(panel, textArea)
             .setRequestFocus(true)
-            .setResizable(false)
+            .setResizable(true)
             .setMovable(false)
             .setShowShadow(true)
-            .setMinSize(JBUI.size(360, 110)) // 增加最小尺寸
+            .setMinSize(JBUI.size(400, 200))
             // 添加以下配置使popup在失去焦点时不消失
             .setCancelOnWindowDeactivation(false)
             .setCancelKeyEnabled(false)  // 禁用ESC键以外
@@ -161,8 +297,104 @@ class RefactorInputPopup(
         val relativePoint = RelativePoint(editor.contentComponent, adjustedPoint)
         popup?.show(relativePoint)
         ApplicationManager.getApplication().invokeLater({
-                textField.requestFocusInWindow()
+                textArea.requestFocusInWindow()
             }, ModalityState.stateForComponent(editor.contentComponent))
+        
+        // 初始调整文本区域高度
+        adjustTextAreaHeight()
+    }
+
+    /**
+     * 调整文本区域高度以适应内容
+     */
+    private fun adjustTextAreaHeight() {
+        // 获取文本行数
+        val lines = textArea.lineCount
+        // 设置最小3行，最大10行
+        val displayLines = lines.coerceIn(3, 10)
+        
+        // 计算新高度 (每行大约20像素)
+        val fontHeight = textArea.font.size + 4 // 加上一些padding
+        val newHeight = displayLines * fontHeight + 20 // 加上边框和padding
+        
+        // 更新滚动面板的首选大小
+        textScrollPane.preferredSize = Dimension(textScrollPane.width, newHeight)
+        
+        // 重新验证布局
+        textScrollPane.revalidate()
+        textScrollPane.parent?.revalidate()
+    }
+
+    /**
+     * 添加上下文文件
+     */
+    private fun addContextFiles() {
+        // 使用ContextManager选择文件
+        val selectedFiles = contextManager.showFileChooser(project)
+        
+        // 批量添加文件到上下文管理器中
+        val addedCount = contextManager.addFilesToContext(selectedFiles)
+        
+        // 更新上下文面板
+        updateContextPanel()
+        
+        // 构建上下文代码字符串
+        contextCode = contextManager.buildContextCode()
+        
+        // 显示提示信息
+        if (addedCount < selectedFiles.size) {
+            Messages.showMessageDialog(
+                project,
+                "已添加 $addedCount 个新文件到上下文（${selectedFiles.size - addedCount} 个文件已存在）",
+                "上下文文件添加结果",
+                Messages.getInformationIcon()
+            )
+        }
+    }
+
+    /**
+     * 删除上下文文件
+     */
+    private fun removeContextFile(file: VirtualFile) {
+        // 从上下文管理器中移除文件
+        contextManager.removeFileFromContext(file)
+        
+        // 更新上下文面板
+        updateContextPanel()
+        
+        // 重新构建上下文代码字符串
+        contextCode = contextManager.buildContextCode()
+    }
+
+    /**
+     * 更新上下文面板
+     */
+    private fun updateContextPanel() {
+        contextTableModel.setData(contextManager.getContextFiles())
+        
+        // 如果没有上下文文件，显示提示信息
+        if (contextManager.getContextFiles().isEmpty()) {
+            contextPanel.removeAll()
+            val emptyLabel = JLabel("暂无上下文文件")
+            emptyLabel.font = JBFont.small()
+            emptyLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            emptyLabel.horizontalAlignment = JLabel.CENTER
+            contextPanel.add(emptyLabel, BorderLayout.CENTER)
+        } else {
+            // 确保表格视图被添加回去
+            if (contextPanel.componentCount == 0 || contextPanel.components[0] is JLabel) {
+                contextPanel.removeAll()
+                val contextTableScrollPane = JScrollPane(contextTable).apply {
+                    verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+                    horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+                    preferredSize = Dimension(0, 100)
+                }
+                contextPanel.add(contextTableScrollPane, BorderLayout.CENTER)
+            }
+        }
+        
+        contextPanel.revalidate()
+        contextPanel.repaint()
     }
 
     private fun showLoading() {
@@ -289,28 +521,59 @@ class RefactorInputPopup(
             DiffManager.getInstance().showDiff(project, request)
         }
     }
-    
-    /**
-     * 显示上下文代码输入对话框
-     */
-    fun showContextCodeDialog() {
-        // 使用ContextManager选择文件
-        val selectedFiles = contextManager.showFileChooser(project)
+
+    // 表格单元格渲染器
+    inner class ContextTableCellRenderer : javax.swing.table.TableCellRenderer {
+        private val label = JLabel()
+        private val button = JButton("x")
         
-        // 批量添加文件到上下文管理器中
-        val addedCount = contextManager.addFilesToContext(selectedFiles)
-        
-        // 构建上下文代码字符串
-        contextCode = contextManager.buildContextCode()
-        
-        // 显示提示信息
-        if (addedCount < selectedFiles.size) {
-            Messages.showMessageDialog(
-                project,
-                "已添加 $addedCount 个新文件到上下文（${selectedFiles.size - addedCount} 个文件已存在）",
-                "上下文文件添加结果",
-                Messages.getInformationIcon()
-            )
+        init {
+            label.font = JBFont.small()
+            label.isOpaque = true
+            button.font = JBFont.small()
+            button.margin = JBUI.insets(0, 3, 0, 3)
+            button.toolTipText = "移除此文件"
         }
+
+        override fun getTableCellRendererComponent(table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int): Component {
+            when (column) {
+                0 -> {
+                    label.text = value as String?
+                    label.background = if (isSelected) table?.selectionBackground else table?.background
+                    label.foreground = if (isSelected) table?.selectionForeground else table?.foreground
+                    return label
+                }
+                1 -> {
+                    return button
+                }
+                else -> {
+                    label.text = ""
+                    return label
+                }
+            }
+        }
+    }
+
+    // 表格按钮编辑器
+    inner class ContextTableButtonEditor(textField: JTextField) : javax.swing.DefaultCellEditor(textField) {
+        private val button = JButton("x")
+        private var row = -1
+        
+        init {
+            button.font = JBFont.small()
+            button.margin = JBUI.insets(0, 3, 0, 3)
+            button.toolTipText = "移除此文件"
+            button.addActionListener {
+                val file = contextTableModel.getFileAt(row)
+                file?.let { removeContextFile(it) }
+            }
+        }
+
+        override fun getTableCellEditorComponent(table: JTable?, value: Any?, isSelected: Boolean, row: Int, column: Int): Component {
+            this.row = row
+            return button
+        }
+
+        override fun getCellEditorValue(): Any = "x"
     }
 }

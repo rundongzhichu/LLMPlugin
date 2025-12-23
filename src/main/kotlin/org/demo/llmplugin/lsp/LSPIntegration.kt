@@ -3,14 +3,8 @@ package org.demo.llmplugin.lsp
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.PsiFile
-import com.intellij.psi.PsiManager
+import com.intellij.psi.*
 import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.psi.PsiElement
-import com.intellij.openapi.editor.LogicalPosition
-import com.intellij.openapi.util.TextRange
-import com.intellij.psi.codeStyle.CodeStyleManager
 
 /**
  * LSP (Language Server Protocol) 集成类
@@ -57,7 +51,7 @@ class LSPIntegration(private val project: Project) {
         val element = psiFile.findElementAt(psiFile.viewProvider.document?.getLineStartOffset(line) ?: 0 + character)
         if (element != null) {
             // 查找相关的符号定义
-            val parentClass = PsiTreeUtil.getParentOfType(element, com.intellij.psi.PsiClass::class.java)
+            val parentClass = PsiTreeUtil.getParentOfType(element, PsiClass::class.java)
             if (parentClass != null) {
                 val range = parentClass.textRange
                 val start = psiFile.viewProvider.document?.getLineNumber(range.startOffset) ?: 0
@@ -78,7 +72,7 @@ class LSPIntegration(private val project: Project) {
                 ))
             }
             
-            val parentMethod = PsiTreeUtil.getParentOfType(element, com.intellij.psi.PsiMethod::class.java)
+            val parentMethod = PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
             if (parentMethod != null) {
                 val range = parentMethod.textRange
                 val start = psiFile.viewProvider.document?.getLineNumber(range.startOffset) ?: 0
@@ -107,9 +101,9 @@ class LSPIntegration(private val project: Project) {
      * 获取代码的上下文信息，包括类、方法、变量等
      */
     fun getCodeStructureContext(psiFile: PsiFile): CodeStructureContext {
-        val classes = PsiTreeUtil.findChildrenOfType(psiFile, com.intellij.psi.PsiClass::class.java)
-        val methods = PsiTreeUtil.findChildrenOfType(psiFile, com.intellij.psi.PsiMethod::class.java)
-        val fields = PsiTreeUtil.findChildrenOfType(psiFile, com.intellij.psi.PsiField::class.java)
+        val classes = PsiTreeUtil.findChildrenOfType(psiFile, PsiClass::class.java)
+        val methods = PsiTreeUtil.findChildrenOfType(psiFile, PsiMethod::class.java)
+        val fields = PsiTreeUtil.findChildrenOfType(psiFile, PsiField::class.java)
         
         val classInfos = classes.map { psiClass ->
             ClassInfo(
@@ -162,10 +156,10 @@ class LSPIntegration(private val project: Project) {
             var currentElement: PsiElement? = element
             while (currentElement != null && currentElement != psiFile) {
                 when (currentElement) {
-                    is com.intellij.psi.PsiMethod -> contextElements.add(0, "method:${currentElement.name}")
-                    is com.intellij.psi.PsiClass -> contextElements.add(0, "class:${currentElement.name}")
-                    is com.intellij.psi.PsiField -> contextElements.add(0, "field:${currentElement.name}")
-                    is com.intellij.psi.PsiParameter -> contextElements.add(0, "parameter:${currentElement.name}")
+                    is PsiMethod -> contextElements.add(0, "method:${currentElement.name ?: "anonymous"}")
+                    is PsiClass -> contextElements.add(0, "class:${currentElement.name ?: "anonymous"}")
+                    is PsiField -> contextElements.add(0, "field:${currentElement.name ?: "anonymous"}")
+                    is PsiParameter -> contextElements.add(0, "parameter:${currentElement.name ?: "anonymous"}")
                 }
                 currentElement = currentElement.parent
             }

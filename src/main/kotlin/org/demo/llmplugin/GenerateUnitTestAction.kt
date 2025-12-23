@@ -16,6 +16,7 @@ import org.demo.llmplugin.util.ChatMessage
 import org.demo.llmplugin.mcp.MCPManagerService
 import org.demo.llmplugin.lsp.LSPContextExtractor
 import org.demo.llmplugin.util.ContextManager
+import com.intellij.psi.PsiManager
 
 class GenerateUnitTestAction : AnAction("Generate Unit Test") {
 
@@ -31,6 +32,7 @@ class GenerateUnitTestAction : AnAction("Generate Unit Test") {
         val project = e.project ?: return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val selectedText = editor.selectionModel.selectedText ?: return
+        val psiFile = e.getData(CommonDataKeys.PSI_FILE)
 
         // 使用LSP获取更精确的代码上下文
         val lspContextExtractor = LSPContextExtractor(project)
@@ -40,6 +42,28 @@ class GenerateUnitTestAction : AnAction("Generate Unit Test") {
         val mcpService = MCPManagerService.getInstance(project)
         contextResources.forEach { resource ->
             mcpService.getMCPServer().getMCPContextManager().addResource(resource)
+        }
+        
+        // 如果有PSI文件，添加结构化和语法上下文
+        psiFile?.let { psi ->
+            // 添加结构化上下文（类、方法、字段信息）
+            val structureContextResources = lspContextExtractor.extractStructureContextFromPsiFile(psi)
+            structureContextResources.forEach { resource ->
+                mcpService.getMCPServer().getMCPContextManager().addResource(resource)
+            }
+            
+            // 添加语法上下文（当前光标位置）
+            val caretOffset = editor.caretModel.primaryCaret.offset
+            val syntaxContextResources = lspContextExtractor.extractSyntaxContext(psi, caretOffset)
+            syntaxContextResources.forEach { resource ->
+                mcpService.getMCPServer().getMCPContextManager().addResource(resource)
+            }
+            
+            // 添加虚拟文件上下文
+            psi.virtualFile?.let { virtualFile ->
+                val virtualFileResource = lspContextExtractor.createResourceFromVirtualFile(virtualFile)
+                mcpService.getMCPServer().getMCPContextManager().addResource(virtualFileResource)
+            }
         }
 
         // 1. 弹出输入框（在 EDT 中）

@@ -5,11 +5,9 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import kotlinx.coroutines.runBlocking
-import org.demo.llmplugin.ui.ExplanationDialog
-import org.demo.llmplugin.util.HttpUtils
-import org.demo.llmplugin.mcp.MCPManagerService
 import org.demo.llmplugin.lsp.LSPContextExtractor
-import org.demo.llmplugin.util.ContextManager
+import org.demo.llmplugin.mcp.MCPManagerService
+import org.demo.llmplugin.ui.ExplanationDialog
 
 class ExplainCodeAction : AnAction("Explain Selected Code") {
 
@@ -23,6 +21,7 @@ class ExplainCodeAction : AnAction("Explain Selected Code") {
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val project = editor.project ?: return
         val selectedText = editor.selectionModel.selectedText ?: return
+        val psiFile = e.getData(CommonDataKeys.PSI_FILE)
         
         // 使用LSP获取更精确的代码上下文
         val lspContextExtractor = LSPContextExtractor(project)
@@ -32,6 +31,28 @@ class ExplainCodeAction : AnAction("Explain Selected Code") {
         val mcpService = MCPManagerService.getInstance(project)
         contextResources.forEach { resource ->
             mcpService.getMCPServer().getMCPContextManager().addResource(resource)
+        }
+        
+        // 如果有PSI文件，添加结构化和语法上下文
+        psiFile?.let { psi ->
+            // 添加结构化上下文（类、方法、字段信息）
+            val structureContextResources = lspContextExtractor.extractStructureContextFromPsiFile(psi)
+            structureContextResources.forEach { resource ->
+                mcpService.getMCPServer().getMCPContextManager().addResource(resource)
+            }
+            
+            // 添加语法上下文（当前光标位置）
+            val caretOffset = editor.caretModel.primaryCaret.offset
+            val syntaxContextResources = lspContextExtractor.extractSyntaxContext(psi, caretOffset)
+            syntaxContextResources.forEach { resource ->
+                mcpService.getMCPServer().getMCPContextManager().addResource(resource)
+            }
+            
+            // 添加虚拟文件上下文
+            psi.virtualFile?.let { virtualFile ->
+                val virtualFileResource = lspContextExtractor.createResourceFromVirtualFile(virtualFile)
+                mcpService.getMCPServer().getMCPContextManager().addResource(virtualFileResource)
+            }
         }
         
         val prompt = "Explain the following code in simple terms:\n\n$selectedText"

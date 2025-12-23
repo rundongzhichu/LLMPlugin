@@ -2,7 +2,9 @@ package org.demo.llmplugin.mcp
 
 import com.google.gson.annotations.SerializedName
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
+import java.nio.file.Paths
 
 /**
  * Model Context Protocol (MCP) 相关数据结构定义
@@ -147,8 +149,8 @@ class MCPContextManager(private val project: Project) : MCPService {
         // 在实际实现中，可能需要更复杂的URI解析逻辑
         if (uri.startsWith("file://")) {
             val filePath = uri.substring("file://".length)
-            return com.intellij.openapi.vfs.VfsUtil.findFile(
-                java.nio.file.Paths.get(filePath),
+            return VfsUtil.findFile(
+                Paths.get(filePath),
                 false
             )
         }

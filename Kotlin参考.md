@@ -702,3 +702,111 @@ suspend fun loadDataConcurrently(): Pair<String, String> = coroutineScope {
 4. 只在程序入口点或测试中使用 **`runBlocking`**
 
 记住这些区别后，你可以根据具体需求选择合适的协程构建器。如果你有具体的并发场景需要实现，我可以提供更针对性的代码示例。
+
+
+
+
+截至目前（2025 年 12 月），Claude（由 Anthropic 开发）本身并不直接支持与 IntelliJ IDEA 的语言服务器（Language Server）集成，因为：
+Claude 是一个闭源的 LLM 服务，主要通过 Web UI、官方 App 或 API（如 Claude API）提供；
+IntelliJ IDEA 使用的是 JetBrains 自研的深度代码理解引擎（基于 PSI，非标准 LSP），不原生暴露 Language Server Protocol (LSP) 接口；
+Claude 官方未提供 IDE 插件（截至 2025 年，GitHub Copilot、Amazon CodeWhisperer、JetBrains AI Assistant 是主流，但无 Claude 官方插件）。
+
+✅ 但你可以通过以下方式 间接让 Claude 利用 IDEA 的语言智能：
+方案一：使用第三方插件桥接（推荐）
+虽然没有官方插件，但社区有实验性项目可将 任意 LLM（包括 Claude）接入 IDEA，并手动注入上下文（模拟“使用语言服务器”的效果）。
+步骤：
+1. 安装支持自定义 LLM 的插件
+   例如：
+   [Code With Me + Custom LLM Backend](https://plugins.jetbrains.com/plugin/14896-code-with-me)（需改造）
+   自研插件（见下文）
+
+2. 在插件中调用 IDEA 的 PSI 获取精准上下文
+   kotlin
+   // 获取当前方法签名 + 类结构
+   val psiMethod = PsiTreeUtil.getParentOfType(editor.caretModel.offset, PsiMethod::class.java)
+   val context = buildString {
+   append("File: ${file.name}\n")
+   append("Class: ${psiClass.qualifiedName}\n")
+   append("Method: ${psiMethod?.text}")
+   // 添加引用、文档等
+   }
+
+3. 将上下文 + 用户问题发送给 Claude API
+   kotlin
+   val prompt = """
+   You are an expert Java developer.
+   Here is the relevant code context from IntelliJ IDEA:
+
+$context
+
+User question: $userQuery
+""".trimIndent()
+
+val response = claudeClient.sendMessage(prompt)
+🔑 关键：不是 Claude 直接连 LSP，而是你的插件从 IDEA 提取结构化信息，再喂给 Claude。
+
+方案二：使用 Continue（VS Code） + 远程访问 IDEA 项目（变通）
+
+如果你愿意切换编辑器：
+1. 在 VS Code 中安装 [Continue](https://continue.dev) 插件；
+2. 配置 Continue 使用 Claude API（支持 anthropic.claude-3-5-sonnet 等）；
+3. Continue 会自动索引项目文件，并可通过 MCP（Model Context Protocol） 调用外部工具；
+4. 虽然不能直接调用 IDEA 的 PSI，但可读取源码、Git 状态等。
+   ❌ 缺点：无法获得 IDEA 特有的深度语义（如 Spring 注解解析、Kotlin 协程上下文）。
+
+方案三：等待官方或社区插件支持
+JetBrains 已开放 AI Assistant 插件框架，未来可能支持 Claude（需 Anthropic 合作）；
+GitHub 上已有实验性项目（如 claude-intellij-plugin），但多为 PoC，稳定性差。
+
+🚫 为什么不能直接“使用 IDEA 自己的语言服务器”？
+
+原因 说明
+------ ------
+IDEA 不实现 LSP JetBrains 使用自研 PSI（Program Structure Interface），比 LSP 更强大，但不兼容标准 LSP 客户端
+Claude 无 IDE 集成 SDK Anthropic 未提供类似 GitHub Copilot 的 IDE 插件开发套件
+安全限制 直接暴露语言服务器需 IPC/网络通信，存在安全风险，IDEA 默认禁止
+
+💡 替代建议：用 JetBrains AI Assistant + Claude API（混合）
+
+如果你有 Claude API Key，可改造 JetBrains AI Assistant 插件（开源部分）：
+
+1. 下载 [AI Assistant 插件源码](https://github.com/JetBrains/ai-assistant-plugin)（部分开源）；
+2. 修改其后端，将请求转发到 https://api.anthropic.com/v1/messages；
+3. 保留 IDEA 原生上下文提取逻辑（类、方法、文档）；
+4. 实现自己的 ClaudeAIService。
+   ⚠️ 注意：违反 JetBrains ToS 可能导致账号封禁，仅限个人使用。
+
+✅ 总结
+
+目标 可行性 方案
+------ -------- ------
+Claude 直接调用 IDEA 语言服务器 ❌ 不可能 IDEA 无 LSP，Claude 无插件
+Claude 通过插件获取 IDEA 结构化上下文 ✅ 可行 自研插件 + PSI + Claude API
+在 VS Code 中用 Continue + Claude ✅ 推荐 放弃 IDEA，换编辑器
+等待官方支持 ⏳ 未知 关注 Anthropic / JetBrains 动态
+
+🔧 如果你决定自研插件，核心代码骨架如下：
+
+kotlin
+// 1. 获取当前代码上下文
+val context = extractContextFromPSI(project, editor)
+
+// 2. 调用 Claude API
+val client = OkHttpClient()
+val requestBody = JSON.toJSONString(mapOf(
+"model" to "claude-3-5-sonnet-20241022",
+"messages" to listOf(mapOf("role" to "user", "content" to "$context\n\n$question")),
+"max_tokens" to 1024
+))
+
+val request = Request.Builder()
+.url("https://api.anthropic.com/v1/messages")
+.header("x-api-key", "YOUR_CLAUDE_KEY")
+.header("anthropic-version", "2023-06-01")
+.post(RequestBody.create(JSON_MEDIA_TYPE, requestBody))
+.build()
+
+val response = client.newCall(request).execute()
+// 3. 显示结果到 ToolWindow
+
+需要我提供完整的插件模板（含 Claude API 集成 + PSI 上下文提取）吗？欢迎继续提问！

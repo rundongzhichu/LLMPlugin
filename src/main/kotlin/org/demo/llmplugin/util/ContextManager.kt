@@ -9,13 +9,17 @@ import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
 
 /**
+ *
+ * todo 后续考虑支持MCP服务协议 减少token的传输 让大模型自己决定是否要获取增量上下文
+ *
+ *
  * 上下文管理工具类
  * 负责管理AI生成代码时所需的上下文信息
  */
 class ContextManager {
     private val contextFiles = mutableSetOf<VirtualFile>()
     
-    /**
+    /**　
      * 添加文件到上下文
      * @param file 要添加的文件
      * @return 如果文件是新添加的则返回true，如果已存在则返回false

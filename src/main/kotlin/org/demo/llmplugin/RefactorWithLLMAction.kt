@@ -9,6 +9,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.swing.Swing
 import org.demo.llmplugin.ui.RefactorInputPopup
 import org.demo.llmplugin.util.HttpUtils
+import org.demo.llmplugin.mcp.MCPManagerService
+import org.demo.llmplugin.lsp.LSPContextExtractor
+import org.demo.llmplugin.util.ContextManager
 
 
 class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
@@ -25,6 +28,16 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
         val project = e.project ?: return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val selectedText = editor.selectionModel.selectedText ?: return
+
+        // 使用LSP获取更精确的代码上下文
+        val lspContextExtractor = LSPContextExtractor(project)
+        val contextResources = lspContextExtractor.extractContextFromEditor(editor)
+        
+        // 将上下文资源添加到MCP服务器
+        val mcpService = MCPManagerService.getInstance(project)
+        contextResources.forEach { resource ->
+            mcpService.getMCPServer().getMCPContextManager().addResource(resource)
+        }
 
         // 1. 弹出输入框（在 EDT 中）
         lateinit var popup: RefactorInputPopup
@@ -44,10 +57,10 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
                     """.trimIndent()
 
                     val responseBuilder = StringBuilder()
-                    // 使用流式响应处理
+                    // 使用MCP协议调用LLM
                     val response = withContext(Dispatchers.IO) {
                         // 采用流式读取AI返回值，拼接成最终字符串
-                        callLLMAPI(prompt) { chunk ->
+                        callLLMAPIWithMCP(prompt, mcpService) { chunk ->
                             isStream = true
                             responseBuilder.append(chunk)
                         }
@@ -91,6 +104,11 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
     private suspend fun callLLMAPI(prompt: String, onChunkReceived: (String) -> Unit): String {
         // 实际应调用 HTTP API
         return HttpUtils.callLocalLlm(prompt, onChunkReceived)
+    }
+    
+    private suspend fun callLLMAPIWithMCP(prompt: String, mcpService: MCPManagerService, onChunkReceived: (String) -> Unit): String {
+        // 使用MCP协议调用LLM
+        return mcpService.getMCPServer().callLLMWithMCPContext(prompt, onChunkReceived)
     }
 
 }

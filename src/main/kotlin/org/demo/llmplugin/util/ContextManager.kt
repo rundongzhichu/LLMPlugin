@@ -7,17 +7,17 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
+import org.demo.llmplugin.mcp.ContextResource
+import org.demo.llmplugin.mcp.MCPContextManager
 
 /**
- *
- * todo 后续考虑支持MCP服务协议 减少token的传输 让大模型自己决定是否要获取增量上下文
- *
- *
  * 上下文管理工具类
  * 负责管理AI生成代码时所需的上下文信息
+ * 现在支持MCP协议来管理上下文资源
  */
-class ContextManager {
+class ContextManager(private val project: Project? = null) {
     private val contextFiles = mutableSetOf<VirtualFile>()
+    private val mcpContextManager: MCPContextManager? = project?.let { MCPContextManager(it) }
     
     /**　
      * 添加文件到上下文
@@ -25,7 +25,10 @@ class ContextManager {
      * @return 如果文件是新添加的则返回true，如果已存在则返回false
      */
     fun addFileToContext(file: VirtualFile): Boolean {
-        return contextFiles.add(file)
+        val added = contextFiles.add(file)
+        // 同时添加到MCP上下文管理器
+        mcpContextManager?.addVirtualFileToContext(file)
+        return added
     }
     
     /**
@@ -36,7 +39,14 @@ class ContextManager {
     fun addFilesToContext(files: Array<VirtualFile>): Int {
         val initialSize = contextFiles.size
         contextFiles.addAll(files)
-        return contextFiles.size - initialSize
+        val addedCount = contextFiles.size - initialSize
+        
+        // 同时添加到MCP上下文管理器
+        files.forEach { file ->
+            mcpContextManager?.addVirtualFileToContext(file)
+        }
+        
+        return addedCount
     }
     
     /**
@@ -44,6 +54,8 @@ class ContextManager {
      */
     fun removeFileFromContext(file: VirtualFile) {
         contextFiles.remove(file)
+        // 同时从MCP上下文管理器移除
+        mcpContextManager?.removeResource("file://${file.path}")
     }
     
     /**
@@ -51,6 +63,8 @@ class ContextManager {
      */
     fun clearContext() {
         contextFiles.clear()
+        // 同时清空MCP上下文管理器
+        mcpContextManager?.clearAllResources()
     }
     
     /**
@@ -72,6 +86,13 @@ class ContextManager {
      */
     fun getContextFilesCount(): Int {
         return contextFiles.size
+    }
+    
+    /**
+     * 获取MCP上下文管理器
+     */
+    fun getMCPContextManager(): MCPContextManager? {
+        return mcpContextManager
     }
     
     /**
@@ -167,16 +188,20 @@ class ContextManager {
         private var INSTANCE: ContextManager? = null
         
         fun getInstance(): ContextManager {
+            throw UnsupportedOperationException("ContextManager requires a Project instance. Use getInstance(project) instead.")
+        }
+        
+        fun getInstance(project: Project): ContextManager {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: ContextManager().also { INSTANCE = it }
+                INSTANCE ?: ContextManager(project).also { INSTANCE = it }
             }
         }
         
         /**
          * 创建一个新的独立上下文管理器实例
          */
-        fun createInstance(): ContextManager {
-            return ContextManager()
+        fun createInstance(project: Project): ContextManager {
+            return ContextManager(project)
         }
     }
 }

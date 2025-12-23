@@ -34,6 +34,8 @@ import com.intellij.openapi.ui.Messages
 import javax.swing.JTextArea
 import javax.swing.JScrollPane
 import org.demo.llmplugin.util.ContextManager
+import org.demo.llmplugin.mcp.MCPManagerService
+import org.demo.llmplugin.lsp.LSPContextExtractor
 import javax.swing.BoxLayout
 import javax.swing.BorderFactory
 import javax.swing.Box
@@ -77,7 +79,9 @@ class RefactorInputPopup(
     var mode: Mode = Mode.REFACTOR
     var presetTemplate: String = ""
     var contextCode: String? = null
-    private val contextManager = ContextManager.createInstance()
+    private val contextManager = ContextManager.createInstance(project)
+    private val mcpService = MCPManagerService.getInstance(project)
+    private val lspContextExtractor = LSPContextExtractor(project)
 
     enum class Mode {
         REFACTOR,

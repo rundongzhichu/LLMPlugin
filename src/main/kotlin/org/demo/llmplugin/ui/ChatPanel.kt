@@ -172,7 +172,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private fun addFilesToContext() {
         // 使用ContextManager选择文件
-        val selectedFiles = contextManager.showFileChooser(project)
+        val selectedFiles = contextManager.showFileChooser()
         
         // 批量添加文件到上下文管理器中
         val addedCount = contextManager.addFilesToContext(selectedFiles)
@@ -212,6 +212,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                     
                     // 使用MCP协议构建上下文消息
                     val response = withContext(Dispatchers.IO) {
+                        // 只使用用户在UI中选择的上下文
                         mcpService.getMCPServer().callLLMWithMCPContext(message) { chunk ->
                             isStream = true
                             // 流式接收数据块并在UI上逐个显示

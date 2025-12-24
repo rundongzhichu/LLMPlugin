@@ -7,9 +7,6 @@ import com.intellij.openapi.application.ApplicationManager
 import kotlinx.coroutines.runBlocking
 import org.demo.llmplugin.ui.ExplanationDialog
 import org.demo.llmplugin.util.HttpUtils
-import org.demo.llmplugin.mcp.MCPManagerService
-import org.demo.llmplugin.lsp.LSPContextExtractor
-import org.demo.llmplugin.util.ContextManager
 
 class ExplainCodeAction : AnAction("Explain Selected Code") {
 
@@ -23,17 +20,6 @@ class ExplainCodeAction : AnAction("Explain Selected Code") {
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val project = editor.project ?: return
         val selectedText = editor.selectionModel.selectedText ?: return
-        
-        // 使用LSP获取更精确的代码上下文
-        val lspContextExtractor = LSPContextExtractor(project)
-        val contextResources = lspContextExtractor.extractContextFromEditor(editor)
-        
-        // 将上下文资源添加到MCP服务器
-        val mcpService = MCPManagerService.getInstance(project)
-        contextResources.forEach { resource ->
-            mcpService.getMCPServer().getMCPContextManager().addResource(resource)
-        }
-        
         val prompt = "Explain the following code in simple terms:\n\n$selectedText"
         print("Prompt: $prompt")
 
@@ -47,9 +33,8 @@ class ExplainCodeAction : AnAction("Explain Selected Code") {
 
         ApplicationManager.getApplication().executeOnPooledThread  {
             try {
-                // 使用MCP协议调用LLM
                 val response = runBlocking {
-                    mcpService.getMCPServer().callLLMWithMCPContext(prompt) { chunk ->
+                    HttpUtils.callLocalLlm(prompt) { chunk ->
                         isStream = true
                         // 流式接收数据块并在UI上逐个显示
                         ApplicationManager.getApplication().invokeLater {

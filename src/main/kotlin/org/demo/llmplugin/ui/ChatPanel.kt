@@ -9,7 +9,6 @@ import kotlinx.coroutines.*
 import org.demo.llmplugin.util.HttpUtils
 import org.demo.llmplugin.util.ContextManager
 import org.demo.llmplugin.util.ChatMessage
-import org.demo.llmplugin.mcp.MCPManagerService
 import java.awt.*
 import javax.swing.*
 import javax.swing.text.SimpleAttributeSet
@@ -28,8 +27,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private lateinit var scrollPane: JBScrollPane
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val messageSpacing = 10 // 消息之间的固定间距
-    private val contextManager = ContextManager.createInstance(project) // 使用独立的上下文管理器实例
-    private val mcpService = MCPManagerService.getInstance(project)
+    private val contextManager = ContextManager.createInstance() // 使用独立的上下文管理器实例
     private val chatHistory = mutableListOf<ChatMessage>()
     private var isStream = false
     private lateinit var contextPanel: JPanel
@@ -198,6 +196,19 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             // 添加用户消息到历史记录
             chatHistory.add(ChatMessage("user", message))
             
+            // 构建包含上下文的系统消息（使用压缩版本）
+            val contextCode = contextManager.buildCompressedContextCode()
+            val systemMessageContent = if (contextCode.isNotEmpty()) {
+                "以下代码作为上下文提供，请在回答时考虑这些信息:\n\n$contextCode"
+            } else {
+                "你是一个专业的编程助手，帮助用户解答编程相关问题。"
+            }
+            
+            // 准备消息列表
+            val messages = mutableListOf<ChatMessage>()
+            messages.add(ChatMessage("system", systemMessageContent))
+            messages.addAll(chatHistory)
+            
             // 要用输入框和发送按钮
             inputField.isEnabled = false
             sendButton.isEnabled = false
@@ -210,9 +221,9 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                 try {
                     val responseBuilder = StringBuilder()
                     
-                    // 使用MCP协议构建上下文消息
+                    // 使用流式响应处理
                     val response = withContext(Dispatchers.IO) {
-                        mcpService.getMCPServer().callLLMWithMCPContext(message) { chunk ->
+                        HttpUtils.callLocalLlm(messages) { chunk ->
                             isStream = true
                             // 流式接收数据块并在UI上逐个显示
                             SwingUtilities.invokeLater {
@@ -220,19 +231,6 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                                 updateAiMessage(responseBuilder.toString())
                             }
                         }
-                    }
-                    
-                    // 添加AI回复到历史记录
-                    chatHistory.add(ChatMessage("assistant", response))
-                    
-                    // 在所有数据接收完成后更新完整响应
-                    SwingUtilities.invokeLater {
-                        if(isStream) {
-                            updateAiMessage(responseBuilder.toString())
-                        } else {
-                            updateAiMessage(response)
-                        }
-                        finishAiMessage()
                     }
                     
                     // 添加AI回复到历史记录

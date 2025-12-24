@@ -48,7 +48,7 @@ class LSPContextExtractorTest : BasePlatformTestCase() {
         """.trimIndent()
         
         // 创建PSI文件
-        val psiFile = PsiFileFactory.getInstance(project)
+        val psiFile = PsiFileFactory.getInstance(testProject)
             .createFileFromText("TestClass.java", testCode)
         
         // 提取结构化上下文
@@ -89,7 +89,7 @@ class LSPContextExtractorTest : BasePlatformTestCase() {
         }
         
         // 创建PSI文件
-        val psiFile = PsiFileFactory.getInstance(project)
+        val psiFile = PsiFileFactory.getInstance(testProject)
             .createFileFromText("LargeClass.java", largeCode)
         
         // 提取分片结构化上下文

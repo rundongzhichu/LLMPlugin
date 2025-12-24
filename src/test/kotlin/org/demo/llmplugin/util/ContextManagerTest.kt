@@ -56,7 +56,7 @@ class ContextManagerTest : BasePlatformTestCase() {
         """.trimIndent()
         
         // 使用IDEA的测试框架创建虚拟文件
-        val psiFile = PsiFileFactory.getInstance(project).createFileFromText("TestClass.java", testCode)
+        val psiFile = PsiFileFactory.getInstance(testProject).createFileFromText("TestClass.java", testCode)
         
         // 创建临时文件
         val tempFile = createTempFile("TestClass.java", testCode)
@@ -167,6 +167,6 @@ class ContextManagerTest : BasePlatformTestCase() {
         return tempFile
     }
     
-    private val project: Project
+    private val testProject: Project
         get() = myFixture.project
 }

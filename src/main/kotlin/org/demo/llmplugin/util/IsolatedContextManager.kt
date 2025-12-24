@@ -8,24 +8,33 @@ import org.demo.llmplugin.lsp.LSPContextExtractor
 import org.demo.llmplugin.lsp.LSPIntegration
 
 /**
- * 上下文管理器
- * 使用LSP服务获取代码上下文信息
+ * 上下文隔离管理器
+ * 为每个功能提供独立的上下文空间
  */
-class ContextManager(private val project: Project) {
+class IsolatedContextManager(private val project: Project) {
     private val lspContextExtractor = LSPContextExtractor()
     private val lspIntegration = LSPIntegration(project)
     
-    private val contextResources = mutableListOf<ContextResource>()
+    // 为不同功能维护独立的上下文
+    private val contextStores = mutableMapOf<String, MutableList<ContextResource>>()
     
     /**
-     * 从PSI文件添加结构化上下文
+     * 获取指定功能的上下文
      */
-    fun addStructureContextFromPsiFile(psiFile: PsiFile): Int {
+    fun getContextForFeature(featureId: String): List<ContextResource> {
+        return contextStores.getOrDefault(featureId, mutableListOf()).toList()
+    }
+    
+    /**
+     * 为指定功能添加结构化上下文
+     */
+    fun addStructureContextForFeature(featureId: String, psiFile: PsiFile): Int {
         val resources = lspContextExtractor.extractContextFromPsiFile(psiFile)
-        var addedCount = 0
+        val store = getContextStoreForFeature(featureId)
         
+        var addedCount = 0
         for (resource in resources) {
-            contextResources.add(resource)
+            store.add(resource)
             addedCount++
         }
         
@@ -33,14 +42,15 @@ class ContextManager(private val project: Project) {
     }
     
     /**
-     * 添加语法上下文
+     * 为指定功能添加语法上下文
      */
-    fun addSyntaxContext(psiFile: PsiFile, offset: Int): Int {
+    fun addSyntaxContextForFeature(featureId: String, psiFile: PsiFile, offset: Int): Int {
         val resources = lspContextExtractor.extractSyntaxContext(psiFile, offset)
-        var addedCount = 0
+        val store = getContextStoreForFeature(featureId)
         
+        var addedCount = 0
         for (resource in resources) {
-            contextResources.add(resource)
+            store.add(resource)
             addedCount++
         }
         
@@ -48,10 +58,11 @@ class ContextManager(private val project: Project) {
     }
     
     /**
-     * 从编辑器获取上下文
+     * 为指定功能从编辑器添加上下文
      */
-    fun addContextFromEditor(editor: Editor): List<ContextResource> {
+    fun addContextFromEditorForFeature(featureId: String, editor: Editor): List<ContextResource> {
         val resources = mutableListOf<ContextResource>()
+        val store = getContextStoreForFeature(featureId)
         
         // 获取编辑器选择的代码上下文
         val selectionModel = editor.selectionModel
@@ -65,14 +76,14 @@ class ContextManager(private val project: Project) {
                 val codeContext = lspIntegration.getSelectedCodeContext(editor)
                 codeContext?.let {
                     val resource = lspContextExtractor.createResourceFromCodeContext(it, file.virtualFile)
-                    contextResources.add(resource)
+                    store.add(resource)
                     resources.add(resource)
                 }
                 
                 // 提取语法上下文
                 val syntaxResources = lspContextExtractor.extractSyntaxContext(file, startOffset)
                 for (resource in syntaxResources) {
-                    contextResources.add(resource)
+                    store.add(resource)
                     resources.add(resource)
                 }
             }
@@ -82,9 +93,11 @@ class ContextManager(private val project: Project) {
     }
     
     /**
-     * 添加虚拟文件到上下文
+     * 为指定功能添加文件到上下文
      */
-    fun addFileToContext(file: VirtualFile): Boolean {
+    fun addFileToContextForFeature(featureId: String, file: VirtualFile): Boolean {
+        val store = getContextStoreForFeature(featureId)
+        
         // 从虚拟文件创建资源并添加到上下文
         val content = try {
             file.contentsToByteArray().toString(Charsets.UTF_8)
@@ -106,45 +119,34 @@ class ContextManager(private val project: Project) {
             )
         )
         
-        contextResources.add(resource)
+        store.add(resource)
         return true
     }
     
     /**
-     * 添加多个文件到上下文
+     * 为指定功能从上下文中移除文件
      */
-    fun addFilesToContext(files: Array<VirtualFile>): Int {
-        var addedCount = 0
-        for (file in files) {
-            if (addFileToContext(file)) {
-                addedCount++
-            }
-        }
-        return addedCount
-    }
-    
-    /**
-     * 从上下文中移除文件
-     */
-    fun removeFileFromContext(file: VirtualFile) {
+    fun removeFileFromContextForFeature(featureId: String, file: VirtualFile) {
+        val store = getContextStoreForFeature(featureId)
         val uri = "file://${file.path}"
-        contextResources.removeAll { it.uri.startsWith(uri) }
+        store.removeAll { it.uri.startsWith(uri) }
     }
     
     /**
-     * 清除上下文
+     * 清除指定功能的上下文
      */
-    fun clearContext() {
-        contextResources.clear()
+    fun clearContextForFeature(featureId: String) {
+        contextStores[featureId]?.clear()
     }
     
     /**
-     * 获取上下文文件列表
+     * 获取指定功能的上下文文件列表
      */
-    fun getContextFiles(): Set<VirtualFile> {
+    fun getContextFilesForFeature(featureId: String): Set<VirtualFile> {
         val files = mutableSetOf<VirtualFile>()
+        val store = contextStores[featureId] ?: return files
         
-        for (resource in contextResources) {
+        for (resource in store) {
             if (resource.uri.startsWith("file://")) {
                 val path = resource.uri.removePrefix("file://").substringBefore("#")
                 val virtualFile = com.intellij.openapi.vfs.VfsUtil.findFile(java.nio.file.Paths.get(path), false)
@@ -156,12 +158,13 @@ class ContextManager(private val project: Project) {
     }
     
     /**
-     * 构建压缩的上下文代码字符串
+     * 构建指定功能的压缩上下文代码字符串
      */
-    fun buildCompressedContextCode(): String {
+    fun buildCompressedContextCodeForFeature(featureId: String): String {
         val contextCode = StringBuilder()
+        val store = contextStores[featureId] ?: return ""
         
-        for (resource in contextResources) {
+        for (resource in store) {
             if (resource.content != null) {
                 contextCode.append("// Context: ${resource.name}\n")
                 contextCode.append("${resource.content}\n\n")
@@ -172,27 +175,22 @@ class ContextManager(private val project: Project) {
     }
     
     /**
-     * 获取当前上下文资源
+     * 获取所有功能ID
      */
-    fun getContextResources(): List<ContextResource> {
-        return contextResources.toList()
+    fun getAllFeatureIds(): Set<String> {
+        return contextStores.keys
+    }
+    
+    /**
+     * 获取上下文存储，如果不存在则创建新的
+     */
+    private fun getContextStoreForFeature(featureId: String): MutableList<ContextResource> {
+        return contextStores.getOrPut(featureId) { mutableListOf() }
     }
     
     companion object {
-        fun createInstance(project: Project): ContextManager {
-            return ContextManager(project)
+        fun createInstance(project: Project): IsolatedContextManager {
+            return IsolatedContextManager(project)
         }
     }
 }
-
-/**
- * 上下文资源定义
- */
-data class ContextResource(
-    val uri: String,  // 资源URI，可以是文件路径或代码片段标识符
-    val name: String,  // 资源名称
-    val kind: String,  // 资源类型（如：file, directory, code_snippet等）
-    val description: String? = null,  // 资源描述
-    val content: String? = null,  // 资源内容（可选，按需获取）
-    val metadata: Map<String, Any>? = null  // 额外元数据
-)

@@ -47,7 +47,7 @@
         <projectService serviceImplementation="org.demo.llmplugin.mcp.MCPManagerService"/>
 
         <!-- 右侧边栏聊天工具窗口 -->
-        <toolWindow id="LLM Chat" secondary="true" anchor="right" factoryClass="org.demo.llmplugin.ChatToolWindowFactory" icon="AllIcons.General.Chat"/>
+        <toolWindow id="LLM Chat" secondary="true" anchor="right" factoryClass="org.demo.llmplugin.ChatToolWindowFactory"/>
     </extensions>
 
     <!-- 可选：顶部菜单栏添加“Ask AI” -->

@@ -9,8 +9,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.swing.Swing
 import org.demo.llmplugin.ui.RefactorInputPopup
 import org.demo.llmplugin.util.HttpUtils
-import org.demo.llmplugin.mcp.MCPManagerService
-import org.demo.llmplugin.lsp.LSPContextExtractor
+import org.demo.llmplugin.util.ChatMessage
 import org.demo.llmplugin.util.ContextManager
 import com.intellij.psi.PsiManager
 import org.demo.llmplugin.util.ContextUtils
@@ -31,16 +30,14 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
         val selectedText = editor.selectionModel.selectedText ?: return
         val psiFile = e.getData(CommonDataKeys.PSI_FILE)
 
-        // 使用统一上下文管理器
+        // 使用新的上下文管理器
         val contextManager = ContextManager.createInstance(project)
         
         // 将当前选中的代码添加为上下文
-        val mcpService = MCPManagerService.getInstance(project)
-        // 只添加当前选中的代码，不添加其他自动上下文
         if (psiFile != null) {
             val selectedContextResources = contextManager.addContextFromEditor(editor)
             selectedContextResources.forEach { resource ->
-                mcpService.getMCPServer().getMCPContextManager().addResource(resource)
+                // 添加到上下文中
             }
         }
 
@@ -50,70 +47,62 @@ class RefactorWithLLMAction : AnAction("Refactor with LLM...") {
             CoroutineScope(Dispatchers.Swing).launch  {
                 // 调用大模型的函数都封装成协程
                 try {
+                    val contextCode = contextManager.buildCompressedContextCode()
                     // 3. 调用 LLM（模拟或真实 API）
                     val prompt = """
-                       You are an expert programmer.
+                        You are an expert programmer.
                         Original code:
                         ```java
                         $selectedText
                         ```
                         Instruction: $instruction
+                        Context: $contextCode
                         Return ONLY the modified code, no explanation.
                     """.trimIndent()
 
+                    val messages = listOf(
+                        ChatMessage("system", "You are an expert code refactoring assistant. Follow the user's instructions to refactor the code. Only return the refactored code without any additional explanation or markdown code block markers."),
+                        ChatMessage("user", prompt)
+                    )
+
                     val responseBuilder = StringBuilder()
-                    // 使用MCP协议调用LLM
+                    // 使用新的上下文管理器和HttpUtils调用LLM，遵循大模型交互规范
                     val response = withContext(Dispatchers.IO) {
                         // 采用流式读取AI返回值，拼接成最终字符串
-                        callLLMAPIWithMCP(prompt, mcpService) { chunk ->
+                        HttpUtils.callLocalLlm(messages) { chunk ->
                             isStream = true
                             responseBuilder.append(chunk)
                         }
                     }
 
-                    // 4. 将AI生成的代码和原始代码传递给popup
-                    ApplicationManager.getApplication().invokeLater {
-                        popup.originalCode = selectedText
-                        if(isStream) {
-                            popup.aiGeneratedCode = responseBuilder.toString()
-                        } else {
-                            popup.aiGeneratedCode = response
-                        }
-                        onComplete()
+                    // 4. 获取最终结果
+                    val result = if (isStream) {
+                        responseBuilder.toString()
+                    } else {
+                        response
                     }
-
+                    
+                    // 5. 完成回调（在 EDT 中）
+                    withContext(Dispatchers.Main) {
+                        onComplete(result)
+                    }
                 } catch (ex: Exception) {
-                    ApplicationManager.getApplication().invokeLater {
+                    ex.printStackTrace()
+                    // 错误处理（在 EDT 中）
+                    withContext(Dispatchers.Main) {
                         Messages.showErrorDialog(
                             project,
-                            "Failed to refactor code: ${ex.message}",
+                            "Error calling LLM: ${ex.message}",
                             "LLM Error"
                         )
-                        // 即使出错也要调用完成回调
-                        ApplicationManager.getApplication().invokeLater {
-                            onComplete()
-                        }
                     }
-                } finally {
-                    isStream = false
                 }
             }
         }
 
-        // 2. 显示输入框（在 EDT 中）
+        // 在编辑器中显示弹出窗口
         ApplicationManager.getApplication().invokeLater {
             popup.show()
         }
     }
-
-    private suspend fun callLLMAPI(prompt: String, onChunkReceived: (String) -> Unit): String {
-        // 实际应调用 HTTP API
-        return HttpUtils.callLocalLlm(prompt, onChunkReceived)
-    }
-    
-    private suspend fun callLLMAPIWithMCP(prompt: String, mcpService: MCPManagerService, onChunkReceived: (String) -> Unit): String {
-        // 使用MCP协议调用LLM
-        return mcpService.getMCPServer().callLLMWithMCPContext(prompt, onChunkReceived)
-    }
-
 }

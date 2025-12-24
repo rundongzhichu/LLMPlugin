@@ -1,17 +1,20 @@
 package org.demo.llmplugin.ui
 
-import com.intellij.openapi.project.Project
-import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.openapi.fileChooser.FileChooserDescriptor
-import com.intellij.openapi.fileChooser.FileChooser
+import com.intellij.diff.DiffManager
+import com.intellij.diff.contents.DocumentContentImpl
+import com.intellij.diff.contents.EmptyContent
+import com.intellij.diff.requests.SimpleDiffRequest
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.EditorFactory
+import com.intellij.openapi.fileTypes.FileType
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
-import com.intellij.openapi.fileTypes.PlainTextFileType
-import com.intellij.ui.components.JBTextField
-import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.JBLabel
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
@@ -39,7 +42,7 @@ import javax.swing.Box
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Insets
-import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.openapi.vfs.VirtualFile
 import java.awt.Color
 import java.awt.Dimension
 import javax.swing.ScrollPaneConstants
@@ -53,176 +56,137 @@ import javax.swing.JTextField
 import javax.swing.JCheckBox
 import com.intellij.psi.PsiManager
 import org.demo.llmplugin.util.ContextUtils
-import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
-import java.awt.Point
-import java.awt.event.FocusAdapter
-import java.awt.event.FocusEvent
-import com.intellij.openapi.ui.ComboBox
-import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.wm.IdeFocusManager
-import com.intellij.util.containers.ContainerUtil
-import java.awt.event.FocusListener
-import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.ui.popup.ComponentPopupBuilder
-import com.intellij.ui.awt.RelativePoint
 
 class RefactorInputPopup(
     private val project: Project,
     private val editor: Editor,
-    private val mode: Mode = Mode.REFATOR,
-    private val onGenerate: (String, (String) -> Unit) -> Unit
-) : JPanel(BorderLayout()) {
-    enum class Mode {
-        REFATOR, GENERATE_TEST
-    }
-
+    private val onGenerate: (String, () -> Unit) -> Unit  // 修改回调签名，添加完成回调
+) {
+    private var popup: JBPopup? = null
     private lateinit var textArea: JTextArea
+    private lateinit var textScrollPane: JScrollPane
+    private lateinit var escHintLabel: JLabel
+    private lateinit var loadingHintLabel: JLabel
+    private lateinit var bottomPanel: JPanel
+    private lateinit var buttonPanel: JPanel
+    private lateinit var previewButton: JButton
+    private lateinit var cancelButton: JButton
     private lateinit var contextPanel: JPanel
     private lateinit var contextTable: JTable
     private lateinit var contextTableModel: ContextTableModel
-    private var popup: JBPopup? = null
-    private lateinit var bottomPanel: JPanel
-    private lateinit var escHintLabel: JLabel
+    private lateinit var contextLabel: JLabel
+    var aiGeneratedCode: String? = null
+    var originalCode: String? = null
+    var fileType : FileType? = null
+    var mode: Mode = Mode.REFACTOR
+    var presetTemplate: String = ""
+    var contextCode: String? = null
     private val contextManager = ContextManager.createInstance(project)
-    private var contextCode = ""
-    private val maxContextLength = 10000 // 限制上下文长度
 
-    init {
-        initializeUI()
-        loadInitialContext()
+
+    enum class Mode {
+        REFACTOR,
+        GENERATE_TEST
     }
 
-    private fun initializeUI() {
-        layout = BorderLayout()
+    fun show() {
+        // 创建多行文本区域
+        textArea = JTextArea(3, 30)
+        textArea.border = EmptyBorder(5, 8, 5, 8)
         
-        // 创建主面板
+        // 设置初始文本
+        textArea.text = if (mode == Mode.GENERATE_TEST && presetTemplate.isNotEmpty()) {
+            presetTemplate
+        } else {
+            ""
+        }
+
+        // 监听文本变化以调整高度
+        textArea.document.addDocumentListener(object : DocumentListener {
+            override fun insertUpdate(e: DocumentEvent?) {
+                adjustTextAreaHeight()
+            }
+
+            override fun removeUpdate(e: DocumentEvent?) {
+                adjustTextAreaHeight()
+            }
+
+            override fun changedUpdate(e: DocumentEvent?) {
+                adjustTextAreaHeight()
+            }
+        })
+
+        // 回车触发生成（Ctrl+Enter）
+        textArea.addKeyListener(object : KeyAdapter() {
+            override fun keyPressed(e: KeyEvent) {
+                if (e.keyCode == KeyEvent.VK_ENTER && e.isControlDown) {
+                    val text = textArea.text.trim()
+                    if (text.isNotEmpty()) {
+                        showLoading()
+                        // 使用executeOnPooledThread在后台线程执行生成逻辑
+                        ApplicationManager.getApplication().executeOnPooledThread {
+                            onGenerate(text) {
+                                // 在EDT线程更新UI
+                                ApplicationManager.getApplication().invokeLater {
+                                    showDiffPreview()
+                                }
+                            }
+                        }
+                    }
+                } else if (e.keyCode == KeyEvent.VK_ESCAPE) {
+                    popup?.cancel()
+                }
+            }
+        })
+
+        // 创建带滚动条的文本区域
+        textScrollPane = JScrollPane(textArea).apply {
+            verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
+            border = EmptyBorder(0, 0, 0, 0)
+            preferredSize = Dimension(400, 80) // 设置首选大小
+        }
+
+        // 创建上下文面板
+        contextPanel = JPanel(BorderLayout())
+        contextPanel.border = BorderFactory.createTitledBorder("上下文文件")
+        
+        // 创建表格模型和表格
+        contextTableModel = ContextTableModel()
+        val contextTableEditor = ContextTableButtonEditor(JTextField())
+        contextTableEditor.onRemove = { file -> removeContextFile(file) }
+        
+        contextTable = JTable(contextTableModel).apply {
+            tableHeader
+            setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
+            setDefaultRenderer(Object::class.java, ContextTableCellRenderer())
+            setDefaultEditor(Object::class.java, contextTableEditor)
+            intercellSpacing = Dimension(0, 0)
+            rowHeight = 25
+            setShowGrid(false)
+            autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
+        }
+        
+        val contextTableScrollPane = JScrollPane(contextTable).apply {
+            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+            preferredSize = Dimension(0, 100)
+        }
+        
+        contextPanel.add(contextTableScrollPane, BorderLayout.CENTER)
+        updateContextPanel()
+
         val panel = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.empty(8)
         }
 
-        // 文本输入区域
-        textArea = JTextArea().apply {
-            lineWrap = true
-            wrapStyleWord = true
-            rows = 8
-            columns = 40
-            font = JBFont.monospace()
-            
-            // 添加键盘监听器
-            addKeyListener(object : KeyAdapter() {
-                override fun keyPressed(e: KeyEvent) {
-                    // Ctrl+Enter 触发生成
-                    if (e.keyCode == KeyEvent.VK_ENTER && e.isControlDown) {
-                        e.consume()
-                        generate()
-                    }
-                    // ESC 关闭弹窗
-                    else if (e.keyCode == KeyEvent.VK_ESCAPE) {
-                        e.consume()
-                        closePopup()
-                    }
-                }
-            })
-            
-            // 添加焦点监听器，以便在获得焦点时更新ESC提示
-            addFocusListener(object : FocusAdapter() {
-                override fun focusGained(e: FocusEvent?) {
-                    updateEscHint("ESC关闭")
-                }
-                
-                override fun focusLost(e: FocusEvent?) {
-                    updateEscHint("ESC退出")
-                }
-            })
+        // 输入框区域
+        val inputPanel = JPanel(BorderLayout()).apply {
+            border = JBUI.Borders.empty(2, 0, 8, 0) // 增加底部边距
+            add(textScrollPane, BorderLayout.CENTER)
         }
         
-        val textScrollPane = JBScrollPane(textArea).apply {
-            verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
-            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
-        }
-
-        // 上下文面板
-        createContextPanel()
-
-        // 按钮面板
-        val buttonPanel = createButtonPanel()
-
-        // 底部面板容器
-        bottomPanel = JPanel(BorderLayout()).apply {
-            // 左侧：编辑当前选区提示
-            val selectionHint = JLabel(
-                if (mode == Mode.GENERATE_TEST) "为选中代码生成测试" else "编辑当前选区"
-            )
-            selectionHint.font = JBFont.small()
-            selectionHint.foreground = JBUI.CurrentTheme.Label.disabledForeground()
-            add(selectionHint, BorderLayout.WEST)
-            
-            // 右侧：ESC退出标签（初始状态）
-            escHintLabel = JLabel("ESC退出")
-            escHintLabel.font = JBFont.small()
-            escHintLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
-            add(escHintLabel, BorderLayout.EAST)
-        }
-        
-        // 组装主面板
-        panel.add(textScrollPane, BorderLayout.NORTH)
-        panel.add(contextPanel, BorderLayout.CENTER)
-        panel.add(buttonPanel, BorderLayout.EAST)
-        panel.add(bottomPanel, BorderLayout.SOUTH)
-
-        add(panel, BorderLayout.CENTER)
-    }
-    
-    private fun createContextPanel() {
-        contextPanel = JPanel(BorderLayout()).apply {
-            border = JBUI.Borders.customLineLeft(JBUI.CurrentTheme.Border.CONTRAST_BORDER)
-            preferredSize = Dimension(200, 0) // 设置最小宽度
-        }
-        
-        val contextTitlePanel = JPanel(FlowLayout(FlowLayout.LEFT)).apply {
-            add(JBLabel("上下文文件:"))
-        }
-        contextPanel.add(contextTitlePanel, BorderLayout.NORTH)
-        
-        // 初始化表格模型和表格
-        contextTableModel = ContextTableModel()
-        contextTable = JTable(contextTableModel).apply {
-            selectionModel.selectionMode = ListSelectionModel.SINGLE_SELECTION
-            tableHeader.reorderingAllowed = false
-            rowHeight = 30
-            autoResizeMode = JTable.AUTO_RESIZE_LAST_COLUMN
-        }
-        
-        // 设置列宽
-        if (contextTable.columnModel.columnCount > 1) {
-            contextTable.columnModel.getColumn(1).preferredWidth = 30 // 删除按钮列较窄
-        }
-        
-        // 创建表格按钮编辑器
-        val buttonEditor = ContextTableButtonEditor(JBTextField()).apply {
-            onRemove = { file -> removeContextFile(file) }
-        }
-        contextTable.columnModel.getColumn(1).cellEditor = buttonEditor
-        
-        val contextTableScrollPane = JBScrollPane(contextTable).apply {
-            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
-            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
-        }
-        
-        contextPanel.add(contextTableScrollPane, BorderLayout.CENTER)
-        
-        // 添加添加上下文文件按钮
-        val addContextButton = JButton("添加文件")
-        addContextButton.addActionListener {
-            addContextFiles()
-        }
-        
-        val buttonPanel = JPanel(BorderLayout())
-        buttonPanel.add(addContextButton, BorderLayout.NORTH)
-        contextPanel.add(buttonPanel, BorderLayout.SOUTH)
-    }
-    
-    private fun createButtonPanel() = JPanel(GridLayout(2, 1)).apply {
+        // 添加按钮面板
         val addButton = JButton("+")
         addButton.toolTipText = "添加上下文文件"
         addButton.addActionListener {
@@ -246,133 +210,36 @@ class RefactorInputPopup(
             }
         }
         
-        add(addButton)
-        add(generateButton)
-    }
-    
-    private fun updateEscHint(text: String) {
-        escHintLabel.text = text
-    }
-    
-    private fun loadInitialContext() {
-        // 添加当前编辑的文件到上下文
-        val psiFile = PsiManager.getInstance(project).getPsiFile(editor.document)
-        if (psiFile != null) {
-            val virtualFile = psiFile.virtualFile
-            if (virtualFile != null) {
-                addRichContextForCodeFile(virtualFile)
-            }
+        val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
+            add(addButton)
+            add(generateButton)
+        }
+
+        // 底部面板容器
+        bottomPanel = JPanel(BorderLayout()).apply {
+            // 左侧：编辑当前选区提示
+            val selectionHint = JLabel(
+                if (mode == Mode.GENERATE_TEST) "为选中代码生成测试" else "编辑当前选区"
+            )
+            selectionHint.font = JBFont.small()
+            selectionHint.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            add(selectionHint, BorderLayout.WEST)
+            
+            // 右侧：ESC退出标签（初始状态）
+            escHintLabel = JLabel("ESC退出")
+            escHintLabel.font = JBFont.small()
+            escHintLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            add(escHintLabel, BorderLayout.EAST)
         }
         
-        // 更新上下文面板
-        updateContextPanel()
-        
-        // 重新构建上下文代码字符串（使用压缩版本）
-        contextCode = contextManager.buildCompressedContextCode()
-    }
-    
-    private fun addRichContextForCodeFile(file: VirtualFile): Boolean {
-        var added = false
-        
-        if (ContextUtils.isCodeFile(file)) {
-            val psiFile = com.intellij.psi.PsiManager.getInstance(project).findFile(file)
-            if (psiFile != null) {
-                // 添加结构化上下文（优先使用）
-                val structureAdded = contextManager.addStructureContextFromPsiFile(psiFile)
-                // 添加语法上下文（在文件开头）
-                val syntaxAdded = contextManager.addSyntaxContext(psiFile, 0)
-                // 添加虚拟文件上下文
-                val virtualFileAdded = contextManager.addFileToContext(file)
-                
-                added = structureAdded > 0 || syntaxAdded > 0 || virtualFileAdded
-            } else {
-                // 如果无法获取PSI文件，则直接添加文件
-                added = contextManager.addFileToContext(file)
-            }
-        } else {
-            // 对于非代码文件，直接添加
-            added = contextManager.addFileToContext(file)
-        }
-        
-        return added
-    }
-    
-    /**
-     * 删除上下文文件
-     */
-    private fun removeContextFile(file: VirtualFile) {
-        // 从上下文管理器中移除文件
-        contextManager.removeFileFromContext(file)
-        
-        // 更新上下文面板
-        updateContextPanel()
-        
-        // 重新构建上下文代码字符串（使用压缩版本）
-        contextCode = contextManager.buildCompressedContextCode()
-    }
-    
-    /**
-     * 添加上下文文件
-     */
-    private fun addContextFiles() {
-        val descriptor = FileChooserDescriptorFactory.createMultipleFilesNoJarsDescriptor()
-        val files = FileChooser.chooseFiles(descriptor, project, null)
-        
-        var addedCount = 0
-        for (file in files) {
-            if (file.virtualFile != null && addRichContextForCodeFile(file.virtualFile)) {
-                addedCount++
-            }
-        }
-        
-        if (addedCount > 0) {
-            updateContextPanel()
-            contextCode = contextManager.buildCompressedContextCode()
-            Messages.showInfoMessage(project, "成功添加 $addedCount 个文件到上下文", "添加成功")
-        }
-    }
-    
-    /**
-     * 更新上下文面板
-     */
-    private fun updateContextPanel() {
-        contextTableModel.setData(contextManager.getContextFiles())
-    }
-    
-    private fun showLoading() {
-        // 显示加载状态
-        textArea.isEnabled = false
-    }
-    
-    private fun showDiffPreview() {
-        // 显示差异预览
-        textArea.isEnabled = true
-    }
-    
-    private fun generate() {
-        val instruction = textArea.text.trim()
-        if (instruction.isNotEmpty()) {
-            showLoading()
-            // 使用executeOnPooledThread在后台线程执行生成逻辑
-            ApplicationManager.getApplication().executeOnPooledThread {
-                onGenerate(instruction) { result ->
-                    // 在EDT线程更新UI
-                    ApplicationManager.getApplication().invokeLater {
-                        showDiffPreview()
-                        closePopup()
-                    }
-                }
-            }
-        }
-    }
-    
-    private fun closePopup() {
-        popup?.cancel()
-    }
-    
-    fun show() {
+        // 组装主面板
+        panel.add(inputPanel, BorderLayout.NORTH)
+        panel.add(contextPanel, BorderLayout.CENTER)
+        panel.add(buttonPanel, BorderLayout.EAST)
+        panel.add(bottomPanel, BorderLayout.SOUTH)
+
         popup = JBPopupFactory.getInstance()
-            .createComponentPopupBuilder(this, textArea)
+            .createComponentPopupBuilder(panel, textArea)
             .setRequestFocus(true)
             .setResizable(true)
             .setMovable(false)
@@ -402,11 +269,257 @@ class RefactorInputPopup(
         // 初始调整文本区域高度
         adjustTextAreaHeight()
     }
-    
+
+    /**
+     * 调整文本区域高度以适应内容
+     */
     private fun adjustTextAreaHeight() {
-        val lineCount = textArea.lineCount
-        val preferredHeight = minOf(maxOf(lineCount * 25, 100), 300) // 根据行数调整高度，最小100，最大300
-        textArea.preferredSize = Dimension(textArea.preferredSize.width, preferredHeight)
-        revalidate()
+        // 获取文本行数
+        val lines = textArea.lineCount
+        // 设置最小3行，最大10行
+        val displayLines = lines.coerceIn(3, 10)
+        
+        // 计算新高度 (每行大约20像素)
+        val fontHeight = textArea.font.size + 4 // 加上一些padding
+        val newHeight = displayLines * fontHeight + 20 // 加上边框和padding
+        
+        // 更新滚动面板的首选大小
+        textScrollPane.preferredSize = Dimension(textScrollPane.width, newHeight)
+        
+        // 重新验证布局
+        textScrollPane.revalidate()
+        textScrollPane.parent?.revalidate()
+    }
+
+    /**
+     * 添加上下文文件
+     */
+    private fun addContextFiles() {
+        // 使用ContextManager选择文件
+        val selectedFiles = contextManager.showFileChooser()
+        
+        // 批量添加文件到上下文管理器中
+        var addedCount = 0
+        for (file in selectedFiles) {
+            // 添加丰富的上下文
+            if (addRichContextForCodeFile(file)) {
+                addedCount++
+            }
+        }
+        
+        // 更新上下文面板
+        updateContextPanel()
+        
+        // 构建上下文代码字符串（使用压缩版本）
+        contextCode = contextManager.buildCompressedContextCode()
+        
+        // 显示提示信息
+        if (addedCount < selectedFiles.size) {
+            Messages.showMessageDialog(
+                project,
+                "已添加 $addedCount 个新文件到上下文（${selectedFiles.size - addedCount} 个文件已存在）",
+                "上下文文件添加结果",
+                Messages.getInformationIcon()
+            )
+        }
+    }
+    
+    /**
+     * 为代码文件添加丰富的上下文
+     */
+    private fun addRichContextForCodeFile(file: VirtualFile): Boolean {
+        var added = false
+        
+        if (ContextUtils.isCodeFile(file)) {
+            val psiFile = com.intellij.psi.PsiManager.getInstance(project).findFile(file)
+            if (psiFile != null) {
+                // 添加结构化上下文
+                val structureAdded = contextManager.addStructureContextFromPsiFile(psiFile)
+                // 添加语法上下文（在文件开头）
+                val syntaxAdded = contextManager.addSyntaxContext(psiFile, 0)
+                // 添加虚拟文件上下文
+                val virtualFileAdded = contextManager.addFileToContext(file)
+                
+                added = structureAdded > 0 || syntaxAdded > 0 || virtualFileAdded
+            } else {
+                // 如果无法获取PSI文件，则直接添加文件
+                added = contextManager.addFileToContext(file)
+            }
+        } else {
+            // 对于非代码文件，直接添加
+            added = contextManager.addFileToContext(file)
+        }
+        
+        return added
+    }
+
+    /**
+     * 删除上下文文件
+     */
+    private fun removeContextFile(file: VirtualFile) {
+        // 从上下文管理器中移除文件
+        contextManager.removeFileFromContext(file)
+        
+        // 更新上下文面板
+        updateContextPanel()
+        
+        // 重新构建上下文代码字符串（使用压缩版本）
+        contextCode = contextManager.buildCompressedContextCode()
+    }
+
+    /**
+     * 更新上下文面板
+     */
+    private fun updateContextPanel() {
+        contextTableModel.setData(contextManager.getContextFiles())
+        
+        // 如果没有上下文文件，显示提示信息
+        if (contextManager.getContextFiles().isEmpty()) {
+            contextPanel.removeAll()
+            val emptyLabel = JLabel("暂无上下文文件")
+            emptyLabel.font = JBFont.small()
+            emptyLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            emptyLabel.horizontalAlignment = JLabel.CENTER
+            contextPanel.add(emptyLabel, BorderLayout.CENTER)
+        } else {
+            // 确保表格视图被添加回去
+            if (contextPanel.componentCount == 0 || contextPanel.components[0] is JLabel) {
+                contextPanel.removeAll()
+                val contextTableScrollPane = JScrollPane(contextTable).apply {
+                    verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+                    horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+                    preferredSize = Dimension(0, 100)
+                }
+                contextPanel.add(contextTableScrollPane, BorderLayout.CENTER)
+            }
+        }
+        
+        contextPanel.revalidate()
+        contextPanel.repaint()
+    }
+
+    private fun showLoading() {
+        // 隐藏ESC提示，显示生成中提示
+        escHintLabel.isVisible = false
+        loadingHintLabel = JLabel("生成中...")
+        loadingHintLabel.font = JBFont.small()
+        loadingHintLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+        bottomPanel.add(loadingHintLabel, BorderLayout.EAST)
+        bottomPanel.revalidate()
+        bottomPanel.repaint()
+    }
+
+    private fun showDiffPreview() {
+        // 移除生成中提示
+        if (::loadingHintLabel.isInitialized) {
+            bottomPanel.remove(loadingHintLabel)
+            escHintLabel.isVisible = true
+        }
+        // 预览按钮：打开代码预览窗口
+        aiGeneratedCode?.let { code ->
+            ApplicationManager.getApplication().invokeLater {
+                if (mode == Mode.GENERATE_TEST) {
+                    showGeneratedCode(code)
+                } else {
+                    originalCode?.let { original ->
+                        showAiDiffInStandardWindow(original, code)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun applyAiGeneratedCode(newCode: String) {
+        val project = editor.project ?: return
+        // 修改代码用WriteCommandAction
+        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+            val document = editor.document
+            val selectionModel = editor.selectionModel
+            val start = selectionModel.selectionStart
+            val end = selectionModel.selectionEnd
+
+            // 替换选中区域为AI生成的代码
+            document.replaceString(start, end, newCode)
+
+            // 取消选中，并定位光标到末尾
+            selectionModel.removeSelection()
+            editor.caretModel.moveToOffset(start + newCode.length)
+        }
+    }
+
+    /**
+     * 显示生成的代码（用于生成测试的情况）
+     */
+    private fun showGeneratedCode(generatedCode: String) {
+        var title = "AI Generated Test Code"
+        // 创建 Document（用于语法高亮）
+        val editorFactory = EditorFactory.getInstance()
+        val generatedDoc = editorFactory.createDocument(generatedCode)
+
+        // 设置文件类型（关键！否则无高亮）
+        generatedDoc.setReadOnly(true)
+
+        // 创建 Diff 内容
+        val leftContent = DocumentContentImpl(project, generatedDoc, fileType)
+        val rightContent = EmptyContent()
+
+        // 创建请求
+        val request = SimpleDiffRequest(title, leftContent, rightContent, "Generated Test", "None")
+        
+        // 创建 Apply 按钮动作
+        val applyAction = object : AnAction("Insert Test Code", "Insert generated test code", com.intellij.icons.AllIcons.Actions.Checked) {
+            override fun actionPerformed(e: AnActionEvent) {
+                // 应用AI生成的代码
+                applyAiGeneratedCode(generatedDoc.text)
+            }
+        }
+
+        // 创建动作列表并添加Apply按钮
+        val actionList = listOf<AnAction>(applyAction)
+        request.putUserData(com.intellij.diff.util.DiffUserDataKeys.CONTEXT_ACTIONS, ArrayList(actionList))
+
+        // 在 EDT 中打开
+        ApplicationManager.getApplication().invokeLater {
+            DiffManager.getInstance().showDiff(project, request)
+        }
+    }
+
+    /**
+     * 显示AI生成的代码的差异
+     */
+    private fun showAiDiffInStandardWindow(originalCode : String, aiGeneratedCode: String) {
+        var title = "AI Generated Code Preview"
+        // 创建 Document（用于语法高亮）
+        val editorFactory = EditorFactory.getInstance()
+        val originalDoc = editorFactory.createDocument(originalCode)
+        val revisedDoc = editorFactory.createDocument(aiGeneratedCode)
+
+        // 设置文件类型（关键！否则无高亮）
+        originalDoc.setReadOnly(false)
+        revisedDoc.setReadOnly(true)
+
+        // 创建 Diff 内容
+        val leftContent = DocumentContentImpl(project, revisedDoc, fileType)
+        val rightContent = DocumentContentImpl(project, originalDoc, fileType)
+
+        // 创建请求
+        val request = SimpleDiffRequest(title, leftContent, rightContent, "AI Suggested", "Original")
+        
+        // 创建 Apply 按钮动作
+        val applyAction = object : AnAction("Apply Changes", "Apply AI generated code", com.intellij.icons.AllIcons.Actions.Checked) {
+            override fun actionPerformed(e: AnActionEvent) {
+                // 应用AI生成的代码
+                applyAiGeneratedCode(originalDoc.text)
+            }
+        }
+
+        // 创建动作列表并添加Apply按钮
+        val actionList = listOf<AnAction>(applyAction)
+        request.putUserData(com.intellij.diff.util.DiffUserDataKeys.CONTEXT_ACTIONS, ArrayList(actionList))
+
+        // 在 EDT 中打开
+        ApplicationManager.getApplication().invokeLater {
+            DiffManager.getInstance().showDiff(project, request)
+        }
     }
 }

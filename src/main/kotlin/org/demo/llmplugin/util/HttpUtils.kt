@@ -6,8 +6,9 @@ import com.google.gson.JsonParser
 import com.google.gson.JsonSyntaxException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.demo.llmplugin.LocalLLMSettings
@@ -88,69 +89,17 @@ object HttpUtils {
                 return@withContext "No choices in response"
             }
             
-            val firstChoice = choices.get(0).asJsonObject
-            if (!firstChoice.has("message")) {
-                return@withContext "No message in choice"
-            }
-            
-            val message = firstChoice.getAsJsonObject("message")
-            val content = message.get("content")?.asString
-            
-            if (content == null) {
-                return@withContext "No content in message"
-            }
-            
-            content
-        } catch (e: IOException) {
-            "Network error: ${e.message}"
-        } catch (e: JsonSyntaxException) {
-            "JSON parsing error: ${e.message}"
-        } catch (e: Exception) {
-            "Error: ${e.message}"
-        }
-    }
-
-    /**
-     * 解析流式响应
-     */
-    private fun parseStreamResponse(response: Response, onChunkReceived: (String) -> Unit): String {
-        val reader = BufferedReader(InputStreamReader(response.body?.byteStream(), StandardCharsets.UTF_8))
-        val fullResponse = StringBuilder()
-        
-        reader.use { bufferedReader ->
-            var line: String?
-            while (bufferedReader.readLine().also { line = it } != null) {
-                if (line.isNullOrBlank()) continue
-                if (line!!.startsWith("data: ")) {
-                    val dataStr = line!!.substring("data: ".length)
-                    if (dataStr == "[DONE]") break
+            val content = choices
+                    .get(0)
+                    ?.asJsonObject
+                    ?.getAsJsonObject("message")
+                    ?.get("content")
+                    ?.asString
                     
-                    try {
-                        val json = JsonParser.parseString(dataStr).asJsonObject
-                        if (json.has("choices")) {
-                            val choices = json.getAsJsonArray("choices")
-                            if (choices.size() > 0) {
-                                val choice = choices.get(0).asJsonObject
-                                if (choice.has("delta")) {
-                                    val delta = choice.getAsJsonObject("delta")
-                                    if (delta.has("content")) {
-                                        val content = delta.get("content").asString
-                                        if (!content.isNullOrBlank()) {
-                                            onChunkReceived(content)
-                                            fullResponse.append(content)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        // 忽略解析错误
-                    }
-                }
-            }
+            content ?: "No content in response"
+        } catch (e: Exception) {
+            "Network error: ${e.message ?: e.javaClass.simpleName}"
         }
-        
-        return fullResponse.toString()
     }
 
     /**
@@ -222,25 +171,71 @@ object HttpUtils {
                 return@withContext "No choices in response"
             }
             
-            val firstChoice = choices.get(0).asJsonObject
-            if (!firstChoice.has("message")) {
-                return@withContext "No message in choice"
-            }
-            
-            val message = firstChoice.getAsJsonObject("message")
-            val content = message.get("content")?.asString
-            
-            if (content == null) {
-                return@withContext "No content in message"
-            }
-            
-            content
-        } catch (e: IOException) {
-            "Network error: ${e.message}"
-        } catch (e: JsonSyntaxException) {
-            "JSON parsing error: ${e.message}"
+            val content = choices
+                    .get(0)
+                    ?.asJsonObject
+                    ?.getAsJsonObject("message")
+                    ?.get("content")
+                    ?.asString
+                    
+            content ?: "No content in response"
         } catch (e: Exception) {
-            "Error: ${e.message}"
+            "Network error: ${e.message ?: e.javaClass.simpleName}"
         }
+    }
+    
+    private fun parseStreamResponse(response: Response, onChunkReceived: (String) -> Unit): String {
+        if (!response.isSuccessful) {
+            return "Error: HTTP ${response.code} - ${response.message}"
+        }
+        
+        val responseBody = response.body ?: return "Empty response body"
+        // 使用UTF-8字符集确保中文正确解码
+        val reader = BufferedReader(InputStreamReader(responseBody.byteStream(), StandardCharsets.UTF_8))
+        val stringBuffer = StringBuffer()
+        
+        try {
+            print(
+                "Calling LLM API with prompt: parseStreamResponse"
+            )
+            println("onChunkReceived")
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                if (line!!.startsWith("data: ")) {
+                    val jsonData = line!!.substring(6) // 移除 "data: " 前缀
+                    if (jsonData == "[DONE]") {
+                        break
+                    }
+                    
+                    try {
+                        val json = JsonParser.parseString(jsonData).asJsonObject
+                        val choices = json.getAsJsonArray("choices")
+                        
+                        if (choices != null && choices.size() > 0) {
+                            val delta = choices.get(0).asJsonObject.getAsJsonObject("delta")
+                            if (delta != null && delta.has("content")) {
+                                val content = delta.get("content").asString
+                                stringBuffer.append(content)
+                                // 调用回调函数传递新的内容块
+                                onChunkReceived(content)
+                            }
+                        }
+                    } catch (e: JsonSyntaxException) {
+                        // 忽略解析错误的数据行
+                        continue
+                    }
+                }
+            }
+        } catch (e: IOException) {
+            return "Error reading stream: ${e.message ?: e.javaClass.simpleName}"
+        } finally {
+            try {
+                reader.close()
+            } catch (e: IOException) {
+                // 忽略关闭错误
+            }
+        }
+        
+        return stringBuffer.toString()
     }
 }

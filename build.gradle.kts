@@ -16,6 +16,11 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.6.4")
     implementation("com.googlecode.java-diff-utils:diffutils:1.3.0")
+    
+    // 测试依赖
+    testImplementation("junit:junit:4.13.2")
+    testImplementation(platform("org.junit:junit-bom:5.10.0"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
 }
 
 // Configure Gradle IntelliJ Plugin
@@ -24,7 +29,9 @@ intellij {
     version.set("2021.3.3")
     type.set("IC") // Target IDE Platform
 
-    plugins.set(listOf(/* Plugin Dependencies */))
+    plugins.set(listOf(
+        "com.intellij.java" // 添加Java模块支持，包含Java PSI功能
+    ))
 }
 
 tasks {
@@ -51,5 +58,13 @@ tasks {
 
     publishPlugin {
         token.set(System.getenv("PUBLISH_TOKEN"))
+    }
+    
+    // 配置测试任务
+    test {
+        useJUnit()
+        testLogging {
+            events("passed", "skipped", "failed")
+        }
     }
 }

@@ -7,17 +7,18 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
+import org.demo.llmplugin.lsp.LSPContextExtractor
 
 /**
- *
- * todo 后续考虑支持MCP服务协议 减少token的传输 让大模型自己决定是否要获取增量上下文
- *
- *
  * 上下文管理工具类
  * 负责管理AI生成代码时所需的上下文信息
+ * 支持LSP功能，通过LSP获取代码文件结构化上下文
+ * 其他文件去除不必要信息后原文填入上下文
+ * 大文件200行做分片
  */
-class ContextManager {
+class ContextManager(private val project: Project? = null) {
     private val contextFiles = mutableSetOf<VirtualFile>()
+    private val lspContextExtractor = if (project != null) LSPContextExtractor(project) else null
     
     /**　
      * 添加文件到上下文
@@ -77,6 +78,9 @@ class ContextManager {
     /**
      * 构建上下文代码字符串（压缩版）
      * 只保留必要的信息，减少冗余内容
+     * 支持LSP功能，通过LSP获取代码文件结构化上下文
+     * 其他文件去除不必要信息后原文填入上下文
+     * 大文件200行做分片
      */
     fun buildCompressedContextCode(): String {
         val contextBuilder = StringBuilder()
@@ -86,7 +90,7 @@ class ContextManager {
                 // 如果是目录，递归处理目录中的文件
                 appendCompressedDirectoryContents(contextBuilder, file, "")
             } else {
-                // 如果是文件，直接添加文件内容
+                // 如果是文件，根据文件类型处理
                 appendCompressedFileContent(contextBuilder, file, "")
             }
         }
@@ -126,37 +130,93 @@ class ContextManager {
     /**
      * 添加单个文件的内容（压缩版）
      * 只保留文件名和关键内容，去除不必要的空行和注释
+     * 对代码文件使用LSP提取结构化上下文
+     * 大文件按200行分片处理
      */
     private fun appendCompressedFileContent(builder: StringBuilder, file: VirtualFile, indent: String) {
         try {
+            // 判断是否为代码文件
+            val isCodeFile = ContextResource.isCodeFile(file)
+            
             builder.append("${indent}[文件: ${file.name}]\n")
             
-            val inputStream = file.inputStream
-            val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
-            var line: String?
-            var lineCount = 0
-            val maxLines = 800 // 限制每个文件的最大行数
+            // 读取文件内容
+            val content = file.contentsToByteArray().toString(StandardCharsets.UTF_8)
+            val lines = content.lines()
             
-            while (reader.readLine().also { line = it } != null && lineCount < maxLines) {
-                // 过滤掉空行和纯注释行（简单过滤）
-                if (!line.isNullOrBlank()) {
-                    val trimmedLine = line!!.trim()
-                    // 简单过滤一些常见的无意义注释行
-                    if (!trimmedLine.startsWith("//") || 
-                        (trimmedLine.startsWith("//") && trimmedLine.length > 5)) {
-                        builder.append("$indent$line\n")
-                        lineCount++
+            if (isCodeFile) {
+                // 代码文件：使用LSP提取结构化上下文
+                if (project != null) {
+                    try {
+                        val psiFile = com.intellij.psi.PsiManager.getInstance(project).findFile(file)
+                        if (psiFile != null) {
+                            // 使用LSP提取器获取结构化上下文
+                            val structuredContext = lspContextExtractor?.extractStructureContext(psiFile)
+                            if (structuredContext != null) {
+                                builder.append(structuredContext)
+                                builder.append("\n")
+                                return // 已处理，直接返回
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // 如果LSP提取失败，回退到原始处理方式
+                        builder.append("${indent}// LSP提取失败，使用原始内容\n")
                     }
                 }
             }
             
-            // 如果文件内容超过限制，添加提示
-            if (lineCount >= maxLines) {
-                builder.append("${indent}// ... 文件内容已截断 ...\n")
+            // 如果不是代码文件或LSP提取失败，按行数处理
+            if (lines.size > 200) {
+                // 大文件：按200行分片处理
+                val maxLinesPerChunk = 200
+                
+                for (i in lines.indices step maxLinesPerChunk) {
+                    val chunkLines = lines.subList(i, minOf(i + maxLinesPerChunk, lines.size))
+                    val chunkContent = chunkLines.joinToString("\n")
+                    
+                    builder.append("${indent}// --- Chunk starting at line ${i + 1} ---\n")
+                    for (line in chunkLines) {
+                        // 过滤掉空行和纯注释行（简单过滤）
+                        if (!line.isBlank()) {
+                            val trimmedLine = line.trim()
+                            // 简单过滤一些常见的无意义注释行
+                            if (!trimmedLine.startsWith("//") || 
+                                (trimmedLine.startsWith("//") && trimmedLine.length > 5)) {
+                                builder.append("$indent$line\n")
+                            }
+                        }
+                    }
+                    builder.append("${indent}// --- End of chunk ---\n\n")
+                }
+            } else {
+                // 小文件：直接处理
+                var lineCount = 0
+                val maxLines = 800 // 限制每个文件的最大行数
+                
+                for (line in lines) {
+                    if (lineCount >= maxLines) {
+                        break
+                    }
+                    
+                    // 过滤掉空行和纯注释行（简单过滤）
+                    if (!line.isBlank()) {
+                        val trimmedLine = line.trim()
+                        // 简单过滤一些常见的无意义注释行
+                        if (!trimmedLine.startsWith("//") || 
+                            (trimmedLine.startsWith("//") && trimmedLine.length > 5)) {
+                            builder.append("$indent$line\n")
+                            lineCount++
+                        }
+                    }
+                }
+                
+                // 如果文件内容超过限制，添加提示
+                if (lineCount >= maxLines) {
+                    builder.append("${indent}// ... 文件内容已截断 ...\n")
+                }
             }
             
             builder.append("\n")
-            reader.close()
         } catch (e: Exception) {
             builder.append("${indent}// 读取文件失败: ${file.name} - ${e.message}\n\n")
         }
@@ -177,6 +237,13 @@ class ContextManager {
          */
         fun createInstance(): ContextManager {
             return ContextManager()
+        }
+        
+        /**
+         * 创建一个新的独立上下文管理器实例，带项目参数
+         */
+        fun createInstance(project: Project): ContextManager {
+            return ContextManager(project)
         }
     }
 }

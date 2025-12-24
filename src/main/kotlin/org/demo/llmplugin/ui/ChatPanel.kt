@@ -27,7 +27,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private lateinit var scrollPane: JBScrollPane
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val messageSpacing = 10 // 消息之间的固定间距
-    private val contextManager = ContextManager.createInstance() // 使用独立的上下文管理器实例
+    private val contextManager = ContextManager.createInstance(project) // 使用带项目参数的上下文管理器实例
     private val chatHistory = mutableListOf<ChatMessage>()
     private var isStream = false
     private lateinit var contextPanel: JPanel

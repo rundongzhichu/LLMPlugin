@@ -77,7 +77,7 @@ class RefactorInputPopup(
     var mode: Mode = Mode.REFACTOR
     var presetTemplate: String = ""
     var contextCode: String? = null
-    private val contextManager = ContextManager.createInstance()
+    private val contextManager = ContextManager.createInstance(project)
 
     enum class Mode {
         REFACTOR,

@@ -1,15 +1,14 @@
 package org.demo.llmplugin.util
 
-import com.intellij.openapi.fileChooser.FileChooser
-import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.PsiFile
-import org.demo.llmplugin.lsp.LSPContextExtractor
-import org.demo.llmplugin.mcp.MCPContextManager
+import com.intellij.openapi.fileChooser.FileChooser
+import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
+import org.demo.llmplugin.mcp.ContextResource
+import org.demo.llmplugin.mcp.MCPContextManager
 
 /**
  * 上下文管理工具类
@@ -19,7 +18,6 @@ import java.nio.charset.StandardCharsets
 class ContextManager(private val project: Project? = null) {
     private val contextFiles = mutableSetOf<VirtualFile>()
     private val mcpContextManager: MCPContextManager? = project?.let { MCPContextManager(it) }
-    private val lspContextExtractor: LSPContextExtractor? = project?.let { LSPContextExtractor(it) }
     
     /**　
      * 添加文件到上下文
@@ -49,61 +47,6 @@ class ContextManager(private val project: Project? = null) {
         }
         
         return addedCount
-    }
-    
-    /**
-     * 添加结构化上下文（类、方法、字段信息）
-     */
-    fun addStructureContextFromPsiFile(psiFile: PsiFile): Int {
-        val initialSize = contextFiles.size
-        val virtualFile = psiFile.virtualFile
-        if (virtualFile != null) {
-            contextFiles.add(virtualFile)
-        }
-        
-        // 使用LSP提取器获取结构化上下文并添加到MCP上下文管理器
-        lspContextExtractor?.let { extractor ->
-            val structureContextResources = extractor.extractStructureContextFromPsiFile(psiFile)
-            structureContextResources.forEach { resource ->
-                mcpContextManager?.addResource(resource)
-            }
-            return structureContextResources.size
-        }
-        
-        return 0
-    }
-    
-    /**
-     * 添加语法上下文
-     */
-    fun addSyntaxContext(psiFile: PsiFile, offset: Int): Int {
-        // 使用LSP提取器获取语法上下文并添加到MCP上下文管理器
-        lspContextExtractor?.let { extractor ->
-            val syntaxContextResources = extractor.extractSyntaxContext(psiFile, offset)
-            syntaxContextResources.forEach { resource ->
-                mcpContextManager?.addResource(resource)
-            }
-            return syntaxContextResources.size
-        }
-        
-        return 0
-    }
-    
-    /**
-     * 添加虚拟文件的上下文（使用LSP方式）
-     */
-    fun addVirtualFileContext(virtualFile: VirtualFile): Boolean {
-        // 使用LSP提取器从虚拟文件创建资源
-        lspContextExtractor?.let { extractor ->
-            val resource = extractor.createResourceFromVirtualFile(virtualFile)
-            mcpContextManager?.addResource(resource)
-            return true
-        }
-        
-        // 回退到原始方法
-        val added = contextFiles.add(virtualFile)
-        mcpContextManager?.addVirtualFileToContext(virtualFile)
-        return added
     }
     
     /**

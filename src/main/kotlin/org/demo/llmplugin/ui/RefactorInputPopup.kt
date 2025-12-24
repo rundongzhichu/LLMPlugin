@@ -54,7 +54,6 @@ import java.awt.Component
 import javax.swing.UIManager
 import javax.swing.JTextField
 import javax.swing.JCheckBox
-import com.intellij.psi.PsiManager
 
 class RefactorInputPopup(
     private val project: Project,
@@ -299,35 +298,7 @@ class RefactorInputPopup(
         val selectedFiles = contextManager.showFileChooser(project)
         
         // 批量添加文件到上下文管理器中
-        var addedCount = 0
-        for (file in selectedFiles) {
-            // 如果是代码文件，尝试使用LSP提取器添加更丰富的上下文
-            if (file.extension in listOf("java", "kt", "kts", "scala", "groovy", "js", "ts", "py", "cpp", "c", "h", "go", "rs", "php", "rb", "swift", "dart", "cs")) {
-                val psiFile = PsiManager.getInstance(project).findFile(file)
-                if (psiFile != null) {
-                    // 添加结构化上下文
-                    val structureAdded = contextManager.addStructureContextFromPsiFile(psiFile)
-                    // 添加语法上下文（在文件开头）
-                    val syntaxAdded = contextManager.addSyntaxContext(psiFile, 0)
-                    // 添加虚拟文件上下文
-                    val virtualFileAdded = contextManager.addVirtualFileContext(file)
-                    
-                    if (structureAdded > 0 || syntaxAdded > 0 || virtualFileAdded) {
-                        addedCount++
-                    }
-                } else {
-                    // 如果无法获取PSI文件，则使用传统方法添加
-                    if (contextManager.addFileToContext(file)) {
-                        addedCount++
-                    }
-                }
-            } else {
-                // 对于非代码文件，使用传统方法添加
-                if (contextManager.addFileToContext(file)) {
-                    addedCount++
-                }
-            }
-        }
+        val addedCount = contextManager.addFilesToContext(selectedFiles)
         
         // 更新上下文面板
         updateContextPanel()

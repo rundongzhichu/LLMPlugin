@@ -2,12 +2,10 @@ package org.demo.llmplugin.lsp
 
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import org.demo.llmplugin.mcp.ContextResource
-import java.nio.file.Paths
 
 /**
  * LSP上下文提取器
@@ -25,8 +23,8 @@ class LSPContextExtractor(private val project: Project) {
         // 获取当前选中的代码上下文
         val codeContext = lspIntegration.getSelectedCodeContext(editor)
         if (codeContext != null) {
-            val virtualFile = VfsUtil.findFile(
-                 Paths.get(codeContext.fullFilePath),
+            val virtualFile = com.intellij.openapi.vfs.VfsUtil.findFile(
+                java.nio.file.Paths.get(codeContext.fullFilePath),
                 false
             )
             if (virtualFile != null) {
@@ -187,7 +185,7 @@ class LSPContextExtractor(private val project: Project) {
     fun createResourceFromVirtualFile(virtualFile: VirtualFile): ContextResource {
         val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
         val content = try {
-            virtualFile.contentsToByteArray().toString(Charsets.UTF_8)
+            virtualFile.contentsToByteArray().toString(kotlin.text.Charsets.UTF_8)
         } catch (e: Exception) {
             "// Error reading file content: ${e.message}"
         }
